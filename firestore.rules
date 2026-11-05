@@ -1,0 +1,91 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global protection helper
+    function isValidString(val) {
+      return val is string && val.size() > 0;
+    }
+
+    // 1. PRODUCTS COLLECTION
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.name) &&
+                              request.resource.data.sellPrice is number &&
+                              request.resource.data.sellPrice >= 0;
+      // Prohibit hard delete: app must soft-delete
+      allow delete: if false;
+    }
+
+    // 2. CATEGORIES COLLECTION
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.name);
+      allow delete: if false;
+    }
+
+    // 3. RETAILER SHOPS COLLECTION
+    match /shops/{shopId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.name) &&
+                              isValidString(request.resource.data.phone);
+      allow delete: if false;
+    }
+
+    // 4. DELIVERY ROUTES COLLECTION
+    match /routes/{routeId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.name);
+      allow delete: if false;
+    }
+
+    // 5. EMPLOYEES / STAFF COLLECTION
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.name) &&
+                              request.resource.data.role in ['super_admin', 'admin', 'supervisor', 'sales_employee'];
+      // Protect super admin account from deletion
+      allow delete: if employeeId != 'emp_admin';
+    }
+
+    // 6. ORDERS COLLECTION (No hard deletion allowed)
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if isValidString(request.resource.data.orderNo) &&
+                     request.resource.data.grandTotal is number &&
+                     request.resource.data.grandTotal >= 0;
+      allow update: if isValidString(request.resource.data.orderNo);
+      allow delete: if false; // Soft deletes only!
+    }
+
+    // 7. VISITS COLLECTION
+    match /visits/{visitId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.dateString) &&
+                              isValidString(request.resource.data.shopId);
+      allow delete: if false;
+    }
+
+    // 8. HOLIDAYS COLLECTION
+    match /holidays/{holidayId} {
+      allow read: if true;
+      allow create, update: if isValidString(request.resource.data.dateString);
+      allow delete: if false;
+    }
+
+    // 9. SETTINGS COLLECTION
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 10. AUDIT LOGS (Append-only & strictly immutable)
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create: if isValidString(request.resource.data.action) &&
+                     isValidString(request.resource.data.timestamp);
+      allow update, delete: if false; // Tamper-proof
+    }
+  }
+}
