@@ -741,7 +741,7 @@ export const AdminRoutesCalendar: React.FC = () => {
                 type="text"
                 value={customRouteArea}
                 onChange={(e) => setCustomRouteArea(e.target.value)}
-                placeholder="e.g. Surat West / Adajan"
+                placeholder="e.g. Vijayawada / Guntur"
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>

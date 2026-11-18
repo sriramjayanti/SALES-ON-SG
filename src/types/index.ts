@@ -68,6 +68,9 @@ export interface Product {
   subcategoryId?: string;
   productTypeId?: string;
   unit: string;
+  stock: number; // Available quantity in inventory
+  expiryDate?: string; // Optional expiry date (YYYY-MM-DD)
+  lowStockThreshold?: number; // Optional low stock threshold (defaults to 15)
   sellPrice: number;
   mrp: number;
   taxRate: number;

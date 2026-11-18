@@ -12,7 +12,10 @@ import {
   RotateCcw,
   Upload,
   Image as ImageIcon,
-  X
+  X,
+  AlertTriangle,
+  Calendar,
+  Zap
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { Product, Category, Employee } from '../../types';
@@ -88,11 +91,21 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
   const [unit, setUnit] = useState('Bottle');
   const [selectedUnitType, setSelectedUnitType] = useState<string>('Bottle');
   const [customUnit, setCustomUnit] = useState<string>('');
+  const [stock, setStock] = useState<string>(''); // Quantity available (No default stock!)
+  const [expiryDate, setExpiryDate] = useState<string>(''); // Optional expiry date
+  const [lowStockThreshold, setLowStockThreshold] = useState<string>('15');
   const [sellPrice, setSellPrice] = useState(40);
   const [mrp, setMrp] = useState(40);
   const [taxRate, setTaxRate] = useState(0);
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
+
+  // Filter by stock
+  const [stockFilter, setStockFilter] = useState<'all' | 'low_stock' | 'out_of_stock'>('all');
+
+  // Quick Stock Adjustment Modal State (Admin can update stock anytime)
+  const [quickStockProduct, setQuickStockProduct] = useState<Product | null>(null);
+  const [quickStockInput, setQuickStockInput] = useState<string>('');
 
   // File Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -132,6 +145,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
     setUnit('Bottle');
     setSelectedUnitType('Bottle');
     setCustomUnit('');
+    setStock(''); // strictly empty string, NO default stock!
+    setExpiryDate('');
+    setLowStockThreshold('15');
     setSellPrice(40);
     setMrp(40);
     setTaxRate(0);
@@ -154,6 +170,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
       setSelectedUnitType('custom');
       setCustomUnit(p.unit || '');
     }
+    setStock(p.stock !== undefined ? String(p.stock) : '');
+    setExpiryDate(p.expiryDate || '');
+    setLowStockThreshold(String(p.lowStockThreshold || 15));
     setSellPrice(p.sellPrice);
     setMrp(p.mrp);
     setTaxRate(p.taxRate);
@@ -166,6 +185,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return alert('Product name is required');
+    if (stock.trim() === '' || isNaN(Number(stock)) || Number(stock) < 0) {
+      return alert('Please enter the available stock quantity (must be 0 or higher).');
+    }
 
     const finalUnit = selectedUnitType === 'custom' ? (customUnit.trim() || 'Unit') : selectedUnitType;
 
@@ -175,6 +197,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
         sku,
         categoryId,
         unit: finalUnit,
+        stock: Number(stock),
+        expiryDate: expiryDate.trim() || undefined,
+        lowStockThreshold: Number(lowStockThreshold) || 15,
         sellPrice: Number(sellPrice),
         mrp: Number(mrp),
         taxRate: Number(taxRate),
@@ -187,6 +212,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
         sku,
         categoryId,
         unit: finalUnit,
+        stock: Number(stock),
+        expiryDate: expiryDate.trim() || undefined,
+        lowStockThreshold: Number(lowStockThreshold) || 15,
         sellPrice: Number(sellPrice),
         mrp: Number(mrp),
         taxRate: Number(taxRate),
@@ -195,6 +223,16 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
       });
     }
     setIsProductModalOpen(false);
+  };
+
+  const handleQuickStockSave = () => {
+    if (!quickStockProduct) return;
+    const parsed = Number(quickStockInput);
+    if (quickStockInput.trim() === '' || isNaN(parsed) || parsed < 0) {
+      return alert('Please enter a valid stock quantity (0 or higher).');
+    }
+    StorageService.updateProductStock(quickStockProduct.id, parsed);
+    setQuickStockProduct(null);
   };
 
   const handleConfirmDeleteProduct = () => {
@@ -234,6 +272,11 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
     setIsCatModalOpen(false);
   };
 
+  // Low stock products list
+  const lowStockProductsList = db.products.filter(
+    (p) => !p.isDeleted && p.active && (p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15))
+  );
+
   // Filter products
   const filteredProducts = db.products.filter((p) => {
     const matchesSearch =
@@ -245,7 +288,11 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
       selectedStatus === 'all' ||
       (selectedStatus === 'active' && !isSoftDeleted) ||
       (selectedStatus === 'inactive' && isSoftDeleted);
-    return matchesSearch && matchesCat && matchesStatus;
+    const matchesStock =
+      stockFilter === 'all' ||
+      (stockFilter === 'low_stock' && (p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15))) ||
+      (stockFilter === 'out_of_stock' && (p.stock === 0 || p.stock === undefined));
+    return matchesSearch && matchesCat && matchesStatus && matchesStock;
   });
 
   return (
@@ -309,12 +356,51 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                 <option value="all">All Status</option>
                 <option value="inactive">Deleted / Inactive</option>
               </select>
+
+              {/* Stock Filter */}
+              <select value={stockFilter} onChange={(e) => setStockFilter(e.target.value as any)}>
+                <option value="all">All Stock Levels</option>
+                <option value="low_stock">⚠️ Low Stock (≤15)</option>
+                <option value="out_of_stock">❌ Out of Stock (0)</option>
+              </select>
             </div>
 
             <button className="btn-primary" onClick={openAddProduct}>
               <Plus size={16} /> Add Product
             </button>
           </div>
+
+          {/* Low Stock Warning Banner */}
+          {lowStockProductsList.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#FEF3C7',
+                border: '1px solid #FCD34D',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 14px',
+                marginBottom: '14px',
+                fontSize: '13px',
+                color: '#92400E'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={18} color="#D97706" />
+                <span>
+                  <strong>Inventory Notice:</strong> {lowStockProductsList.length} product(s) are low in stock (available quantity ≤ 15).
+                </span>
+              </div>
+              <button
+                className="btn-secondary"
+                onClick={() => setStockFilter(stockFilter === 'low_stock' ? 'all' : 'low_stock')}
+                style={{ padding: '4px 10px', fontSize: '11.5px', background: '#FFF' }}
+              >
+                {stockFilter === 'low_stock' ? 'Show All Products' : 'Filter Low Stock'}
+              </button>
+            </div>
+          )}
 
           {/* Data Table */}
           <table className="data-table">
@@ -324,6 +410,8 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                 <th>Product Name</th>
                 <th>Category</th>
                 <th>Unit / Pack</th>
+                <th>Available Stock</th>
+                <th>Expiry Date</th>
                 <th>Price</th>
                 <th>MRP</th>
                 <th>Status</th>
@@ -333,6 +421,8 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
             <tbody>
               {filteredProducts.map((p) => {
                 const cat = db.categories.find((c) => c.id === p.categoryId);
+                const isLow = p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15);
+                const isOut = p.stock === 0 || p.stock === undefined;
 
                 return (
                   <tr key={p.id}>
@@ -371,6 +461,55 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                       </span>
                     </td>
                     <td>{p.unit}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isOut ? (
+                          <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                            Out of Stock (0)
+                          </span>
+                        ) : isLow ? (
+                          <span style={{ background: '#FEF3C7', color: '#B45309', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                            ⚠️ Low ({p.stock})
+                          </span>
+                        ) : (
+                          <span style={{ background: '#ECFDF5', color: '#047857', padding: '3px 8px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 600 }}>
+                            {p.stock} in stock
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickStockProduct(p);
+                            setQuickStockInput(String(p.stock ?? 0));
+                          }}
+                          style={{
+                            padding: '3px 6px',
+                            borderRadius: '4px',
+                            background: '#F1F5F9',
+                            border: '1px solid var(--border)',
+                            fontSize: '11px',
+                            color: 'var(--primary)',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px',
+                            fontWeight: 600
+                          }}
+                          title="Quick Update Stock"
+                        >
+                          <Zap size={11} /> Stock
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      {p.expiryDate ? (
+                        <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Calendar size={12} color="var(--text-secondary)" /> {p.expiryDate}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>—</span>
+                      )}
+                    </td>
                     <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '14.5px' }}>
                       ₹{p.sellPrice}
                     </td>
@@ -571,6 +710,70 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                 value={mrp}
                 onChange={(e) => setMrp(Number(e.target.value))}
                 style={{ width: '100%', marginTop: '4px' }}
+              />
+            </div>
+          </div>
+
+          {/* Inventory Stock & Expiry Tracking (Required Stock with NO default, Optional Expiry) */}
+          <div style={{ background: '#F0FDF4', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #BBF7D0' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Package size={16} /> Available Stock & Expiry Tracking
+            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+              Enter available inventory quantity. No default stock is assumed. Admin can adjust stock anytime. Expiry date is optional.
+            </div>
+
+            <div className="form-grid-2">
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Quantity Available in Stock *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  value={stock}
+                  onChange={(e) => setStock(e.target.value)}
+                  placeholder="Enter available quantity (e.g. 50)"
+                  style={{
+                    width: '100%',
+                    marginTop: '4px',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    borderColor: stock.trim() === '' ? '#EF4444' : 'var(--border)'
+                  }}
+                />
+                {stock.trim() === '' && (
+                  <div style={{ fontSize: '11px', color: '#DC2626', marginTop: '2px' }}>
+                    Required: Please enter available quantity (no default stock).
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Expiry Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                  style={{ width: '100%', marginTop: '4px' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: '10px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Low Stock Warning Threshold (Alerts when stock falls to or below this quantity)
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={lowStockThreshold}
+                onChange={(e) => setLowStockThreshold(e.target.value)}
+                placeholder="Default 15"
+                style={{ width: '130px', marginTop: '4px', display: 'block' }}
               />
             </div>
           </div>
@@ -794,6 +997,114 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
             </label>
           </div>
         </form>
+      </Modal>
+
+      {/* Quick Stock Update Modal (Admin can update stock anytime) */}
+      <Modal
+        isOpen={Boolean(quickStockProduct)}
+        onClose={() => setQuickStockProduct(null)}
+        title={`Update Stock: ${quickStockProduct?.name || ''}`}
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setQuickStockProduct(null)}>Cancel</button>
+            <button className="btn-primary" onClick={handleQuickStockSave}>Save Stock</button>
+          </>
+        }
+      >
+        {quickStockProduct && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {quickStockProduct.name} ({quickStockProduct.sku})
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Unit: {quickStockProduct.unit} | Current Available Stock: <strong>{quickStockProduct.stock ?? 0}</strong>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                New Available Stock Quantity
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '15px', fontWeight: 700 }}
+                  onClick={() => {
+                    const current = Number(quickStockInput) || 0;
+                    setQuickStockInput(String(Math.max(0, current - 5)));
+                  }}
+                >
+                  -5
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '15px', fontWeight: 700 }}
+                  onClick={() => {
+                    const current = Number(quickStockInput) || 0;
+                    setQuickStockInput(String(Math.max(0, current - 1)));
+                  }}
+                >
+                  -1
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  value={quickStockInput}
+                  onChange={(e) => setQuickStockInput(e.target.value)}
+                  style={{ flex: 1, padding: '10px', fontSize: '16px', fontWeight: 700, textAlign: 'center' }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '15px', fontWeight: 700 }}
+                  onClick={() => {
+                    const current = Number(quickStockInput) || 0;
+                    setQuickStockInput(String(current + 1));
+                  }}
+                >
+                  +1
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '15px', fontWeight: 700 }}
+                  onClick={() => {
+                    const current = Number(quickStockInput) || 0;
+                    setQuickStockInput(String(current + 10));
+                  }}
+                >
+                  +10
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Quick Presets:</span>
+              {[0, 10, 20, 50, 100, 250, 500].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setQuickStockInput(String(val))}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border)',
+                    background: '#FFF',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Add Category Modal */}

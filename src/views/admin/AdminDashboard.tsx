@@ -51,6 +51,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalShopsCount = db.shops.length;
   const activeEmployeesCount = db.employees.filter((e) => e.status === 'active').length;
 
+  // Low Stock & Inventory KPI
+  const lowStockProducts = db.products.filter(
+    (p) => !p.isDeleted && p.active && (p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15))
+  );
+  const outOfStockProducts = lowStockProducts.filter((p) => p.stock === 0 || p.stock === undefined);
+
   const handleConfirmDelivery = (orderId: string) => {
     const isPaid = window.confirm(
       'Did you collect payment upon delivery? Click OK for Paid, or Cancel for Credit / Pending Payment.'
@@ -266,7 +272,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <Users size={20} />
           </div>
         </div>
+
+        {/* KPI 7: Low Stock Alerts */}
+        <div className="kpi-card" onClick={() => onNavigateTab('products')} style={{ cursor: 'pointer' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="kpi-title">Low Stock Alert</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
+              <span className="kpi-value" style={{ color: lowStockProducts.length > 0 ? '#D97706' : '#059669' }}>
+                {lowStockProducts.length}
+              </span>
+              {lowStockProducts.length > 0 ? (
+                <span className="kpi-badge negative" style={{ background: '#FEF3C7', color: '#B45309' }}>
+                  {outOfStockProducts.length > 0 ? `${outOfStockProducts.length} Out of Stock` : 'Needs Restock'}
+                </span>
+              ) : (
+                <span className="kpi-badge positive" style={{ background: '#ECFDF5', color: '#059669' }}>
+                  Stock Healthy
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              {lowStockProducts.length > 0 ? 'Products running low (≤15 qty)' : 'All products adequately stocked'}
+            </div>
+          </div>
+          <div className="kpi-icon-wrap" style={{ background: lowStockProducts.length > 0 ? '#FFFBEB' : '#ECFDF5', color: lowStockProducts.length > 0 ? '#D97706' : '#059669' }}>
+            <AlertTriangle size={20} />
+          </div>
+        </div>
       </div>
+
+      {/* Low Stock Warning Alert Widget */}
+      {lowStockProducts.length > 0 && (
+        <div
+          style={{
+            background: '#FFFBEB',
+            border: '1px solid #FCD34D',
+            borderRadius: 'var(--radius-lg)',
+            padding: '14px 18px',
+            marginBottom: '20px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={18} color="#D97706" />
+              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#92400E' }}>
+                Low Stock Alert: {lowStockProducts.length} Product(s) Need Restocking
+              </h4>
+            </div>
+            <button
+              className="btn-primary"
+              onClick={() => onNavigateTab('products')}
+              style={{ padding: '4px 12px', fontSize: '12px' }}
+            >
+              Manage & Restock
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {lowStockProducts.map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #FDE68A',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '8px 12px',
+                  minWidth: '180px',
+                  fontSize: '12px'
+                }}
+              >
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.name}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '11px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>SKU: {p.sku}</span>
+                  <span style={{ fontWeight: 700, color: p.stock === 0 ? '#DC2626' : '#D97706' }}>
+                    {p.stock === 0 ? 'Out of Stock' : `${p.stock} left`}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Middle Grid: Sales Overview Chart & Route Completion */}
       <div className="admin-grid-2-1">

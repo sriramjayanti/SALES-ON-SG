@@ -27,7 +27,7 @@ const INITIAL_DATABASE: AppDatabase = {
   settings: {
     businessName: 'Varshitha Sales & Distributing Co.',
     tagline: 'Your Route. Our Growth.',
-    address: 'Plot 42, Industrial Estate, Main Ring Road, Gujarat - 395002',
+    address: 'Plot 42, Industrial Estate, Main Ring Road, Andhra Pradesh - 520001',
     phone: '7799225566',
     email: 'admin@varshithasales.com',
     gstin: '24AAAAA0000A1Z5',
@@ -314,6 +314,9 @@ export const StorageService = {
     const db = this.getDb();
     const newProduct: Product = {
       ...productData,
+      stock: Number(productData.stock) >= 0 ? Number(productData.stock) : 0,
+      expiryDate: productData.expiryDate?.trim() || undefined,
+      lowStockThreshold: Number(productData.lowStockThreshold) > 0 ? Number(productData.lowStockThreshold) : 15,
       id: `prod_${Date.now()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -321,7 +324,7 @@ export const StorageService = {
     db.products.unshift(newProduct);
     this.saveDb(db);
     FirestoreSync.saveDocument('products', newProduct.id, newProduct);
-    this.logAction('ADD_PRODUCT', 'products', newProduct.id, `Added new product ${newProduct.name} (SKU: ${newProduct.sku}) at ₹${newProduct.sellPrice}`);
+    this.logAction('ADD_PRODUCT', 'products', newProduct.id, `Added new product ${newProduct.name} (SKU: ${newProduct.sku}) at ₹${newProduct.sellPrice} with Initial Stock: ${newProduct.stock}`);
     return newProduct;
   },
 
@@ -331,18 +334,39 @@ export const StorageService = {
     if (index !== -1) {
       const old = db.products[index];
       const isPriceChanged = updates.sellPrice !== undefined && updates.sellPrice !== old.sellPrice;
+      const isStockChanged = updates.stock !== undefined && updates.stock !== old.stock;
       db.products[index] = {
         ...old,
         ...updates,
+        stock: updates.stock !== undefined ? Number(updates.stock) : old.stock,
+        expiryDate: updates.expiryDate !== undefined ? (updates.expiryDate.trim() || undefined) : old.expiryDate,
+        lowStockThreshold: updates.lowStockThreshold !== undefined ? Number(updates.lowStockThreshold) : (old.lowStockThreshold || 15),
         updatedAt: new Date().toISOString()
       };
       this.saveDb(db);
       FirestoreSync.saveDocument('products', id, db.products[index]);
-      if (isPriceChanged) {
+      if (isPriceChanged && isStockChanged) {
+        this.logAction('EDIT_PRODUCT', 'products', id, `Updated price to ₹${updates.sellPrice} and stock to ${updates.stock} for ${old.name}`);
+      } else if (isPriceChanged) {
         this.logAction('UPDATE_PRICE', 'products', id, `Updated price for ${old.name} from ₹${old.sellPrice} to ₹${updates.sellPrice}`);
+      } else if (isStockChanged) {
+        this.logAction('UPDATE_STOCK', 'products', id, `Updated stock for ${old.name} from ${old.stock} to ${updates.stock}`);
       } else {
         this.logAction('EDIT_PRODUCT', 'products', id, `Updated product details for ${old.name}`);
       }
+    }
+  },
+
+  updateProductStock(id: string, newStock: number) {
+    const db = this.getDb();
+    const product = db.products.find(p => p.id === id);
+    if (product) {
+      const oldStock = product.stock ?? 0;
+      product.stock = Math.max(0, Number(newStock));
+      product.updatedAt = new Date().toISOString();
+      this.saveDb(db);
+      FirestoreSync.saveDocument('products', id, product);
+      this.logAction('UPDATE_STOCK', 'products', id, `Adjusted stock for ${product.name} from ${oldStock} to ${product.stock}`);
     }
   },
 
@@ -854,6 +878,17 @@ export const StorageService = {
 
     db.orders.unshift(newOrder);
 
+    // Deduct stock for each ordered product
+    orderData.items.forEach(({ product, qty }) => {
+      const prodIndex = db.products.findIndex(p => p.id === product.id);
+      if (prodIndex !== -1) {
+        const currentStock = db.products[prodIndex].stock ?? 0;
+        db.products[prodIndex].stock = Math.max(0, currentStock - qty);
+        db.products[prodIndex].updatedAt = new Date().toISOString();
+        FirestoreSync.saveDocument('products', db.products[prodIndex].id, db.products[prodIndex]);
+      }
+    });
+
     // Update shop's scheduled next visit if specified
     if (orderData.nextVisitDate || orderData.nextVisitTime) {
       if (orderData.nextVisitDate) shop.preferredVisitDate = orderData.nextVisitDate;
@@ -983,9 +1018,23 @@ export const StorageService = {
       order.cancelReason = reason;
       order.cancelledBy = user.name;
       order.cancelledAt = new Date().toISOString();
+
+      // Restock items back to inventory
+      if (order.items && order.items.length > 0) {
+        order.items.forEach((item) => {
+          const prodIndex = db.products.findIndex(p => p.id === item.productId);
+          if (prodIndex !== -1) {
+            const currentStock = db.products[prodIndex].stock ?? 0;
+            db.products[prodIndex].stock = currentStock + item.qty;
+            db.products[prodIndex].updatedAt = new Date().toISOString();
+            FirestoreSync.saveDocument('products', db.products[prodIndex].id, db.products[prodIndex]);
+          }
+        });
+      }
+
       this.saveDb(db);
       FirestoreSync.saveDocument('orders', orderId, order);
-      this.logAction('CANCEL_ORDER', 'orders', orderId, `Cancelled order ${order.orderNo}: ${reason}`);
+      this.logAction('CANCEL_ORDER', 'orders', orderId, `Cancelled order ${order.orderNo}: ${reason}. Restocked item quantities.`);
     }
   },
 
@@ -1000,6 +1049,20 @@ export const StorageService = {
       order.cancelReason = reason;
       order.cancelledBy = user.name;
       order.cancelledAt = new Date().toISOString();
+
+      // Restock items back to inventory if not already restocked
+      if (order.items && order.items.length > 0) {
+        order.items.forEach((item) => {
+          const prodIndex = db.products.findIndex(p => p.id === item.productId);
+          if (prodIndex !== -1) {
+            const currentStock = db.products[prodIndex].stock ?? 0;
+            db.products[prodIndex].stock = currentStock + item.qty;
+            db.products[prodIndex].updatedAt = new Date().toISOString();
+            FirestoreSync.saveDocument('products', db.products[prodIndex].id, db.products[prodIndex]);
+          }
+        });
+      }
+
       this.saveDb(db);
       FirestoreSync.saveDocument('orders', orderId, order);
       this.logAction('DELETE_ORDER', 'orders', orderId, `Soft deleted order ${order.orderNo}`);
@@ -1014,6 +1077,20 @@ export const StorageService = {
       order.active = true;
       order.isDeleted = false;
       order.cancelReason = undefined;
+
+      // Re-deduct stock upon order restoration
+      if (order.items && order.items.length > 0) {
+        order.items.forEach((item) => {
+          const prodIndex = db.products.findIndex(p => p.id === item.productId);
+          if (prodIndex !== -1) {
+            const currentStock = db.products[prodIndex].stock ?? 0;
+            db.products[prodIndex].stock = Math.max(0, currentStock - item.qty);
+            db.products[prodIndex].updatedAt = new Date().toISOString();
+            FirestoreSync.saveDocument('products', db.products[prodIndex].id, db.products[prodIndex]);
+          }
+        });
+      }
+
       this.saveDb(db);
       FirestoreSync.saveDocument('orders', orderId, order);
       this.logAction('RESTORE_ORDER', 'orders', orderId, `Restored order ${order.orderNo}`);

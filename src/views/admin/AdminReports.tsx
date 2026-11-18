@@ -7,7 +7,8 @@ import {
   Award,
   Package,
   Users,
-  ShoppingBag
+  ShoppingBag,
+  AlertTriangle
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 
@@ -20,6 +21,11 @@ export const AdminReports: React.FC = () => {
     .reduce((sum, o) => sum + o.grandTotal, 0);
 
   const totalOrders = db.orders.length;
+
+  // Low Stock products
+  const lowStockProducts = db.products.filter(
+    (p) => !p.isDeleted && p.active && (p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15))
+  );
 
   // Find top product
   const productQuantities: { [prodName: string]: number } = {};
@@ -136,6 +142,18 @@ export const AdminReports: React.FC = () => {
             <Award size={22} />
           </div>
         </div>
+
+        <div className="kpi-card">
+          <div>
+            <div className="kpi-title">Low Stock Alert</div>
+            <div className="kpi-value" style={{ color: lowStockProducts.length > 0 ? '#D97706' : '#059669' }}>
+              {lowStockProducts.length} Items
+            </div>
+          </div>
+          <div className="kpi-icon-wrap" style={{ background: lowStockProducts.length > 0 ? '#FFFBEB' : '#ECFDF5', color: lowStockProducts.length > 0 ? '#D97706' : '#059669' }}>
+            <AlertTriangle size={22} />
+          </div>
+        </div>
       </div>
 
       {/* Middle Layout: Category Donut & Performance Table */}
@@ -233,6 +251,89 @@ export const AdminReports: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Inventory & Low Stock Report Table */}
+      <div className="table-card" style={{ marginTop: '24px' }}>
+        <div className="table-header-toolbar">
+          <div>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '16px', fontWeight: 700, margin: 0 }}>
+              Inventory Stock & Expiry Report
+            </h3>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Track available stock quantities, products running low, and upcoming expiry dates
+            </div>
+          </div>
+          <div style={{ fontSize: '12.5px', color: '#B45309', background: '#FEF3C7', padding: '4px 10px', borderRadius: '4px', fontWeight: 600 }}>
+            {lowStockProducts.length} product(s) require restock
+          </div>
+        </div>
+
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>SKU</th>
+              <th>Category</th>
+              <th>Available Stock</th>
+              <th>Expiry Date</th>
+              <th>Stock Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {db.products.filter(p => !p.isDeleted && p.active).length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                  No active products found in inventory.
+                </td>
+              </tr>
+            ) : (
+              db.products
+                .filter((p) => !p.isDeleted && p.active)
+                .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0))
+                .map((p) => {
+                  const cat = db.categories.find((c) => c.id === p.categoryId);
+                  const isOut = p.stock === 0 || p.stock === undefined;
+                  const isLow = p.stock !== undefined && p.stock <= (p.lowStockThreshold || 15);
+
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight: 600 }}>{p.name}</td>
+                      <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{p.sku}</td>
+                      <td>{cat?.name || 'Unassigned'}</td>
+                      <td style={{ fontWeight: 700 }}>
+                        {p.stock ?? 0} {p.unit}
+                      </td>
+                      <td>
+                        {p.expiryDate ? (
+                          <span style={{ fontSize: '12px', fontWeight: 500 }}>
+                            {p.expiryDate}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        {isOut ? (
+                          <span style={{ background: '#FEE2E2', color: '#DC2626', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                            Out of Stock (0)
+                          </span>
+                        ) : isLow ? (
+                          <span style={{ background: '#FEF3C7', color: '#B45309', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                            ⚠️ Low Stock (≤15)
+                          </span>
+                        ) : (
+                          <span style={{ background: '#ECFDF5', color: '#047857', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
+                            ✓ Adequate Stock
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

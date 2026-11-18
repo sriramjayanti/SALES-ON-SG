@@ -47,8 +47,8 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
   const [alternatePhone, setAlternatePhone] = useState('');
   const [address, setAddress] = useState('');
   const [locality, setLocality] = useState('');
-  const [city, setCity] = useState('Surat');
-  const [state, setState] = useState('Gujarat');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('Andhra Pradesh');
   const [routeId, setRouteId] = useState(db.routes[0]?.id || 'route_a');
   const [assignedEmployeeIds, setAssignedEmployeeIds] = useState<string[]>([]);
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
@@ -97,8 +97,8 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
     setAlternatePhone('');
     setAddress('');
     setLocality('');
-    setCity('Surat');
-    setState('Gujarat');
+    setCity('');
+    setState('Andhra Pradesh');
     setRouteId(db.routes[0]?.id || '');
     setAssignedEmployeeIds(db.employees[0]?.id ? [db.employees[0].id] : []);
     setStatus('active');
@@ -628,12 +628,12 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
               />
             </div>
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>City</label>
+              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>City (Optional)</label>
               <input
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="City"
+                placeholder=""
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>
@@ -643,7 +643,7 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
                 type="text"
                 value={state}
                 onChange={(e) => setState(e.target.value)}
-                placeholder="State"
+                placeholder="Andhra Pradesh"
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>

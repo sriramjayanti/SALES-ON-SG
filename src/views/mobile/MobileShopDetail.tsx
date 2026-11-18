@@ -60,6 +60,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
   const [cart, setCart] = useState<{ [productId: string]: number }>({});
   const [showNoOrderModal, setShowNoOrderModal] = useState<boolean>(false);
   const [noOrderReason, setNoOrderReason] = useState<string>('Shop Owner Unavailable');
+  const [stockWarning, setStockWarning] = useState<string | null>(null);
 
   if (!shop) {
     return (
@@ -75,10 +76,29 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
     );
   }
 
-  // Handle Stepper (+ / -)
+  // Handle Stepper (+ / -) with Authoritative Stock Guard
   const updateQty = (productId: string, delta: number) => {
+    const prod = allProducts.find((p) => p.id === productId);
+    const availableStock = prod?.stock ?? 0;
+
     setCart((prev) => {
       const current = prev[productId] || 0;
+
+      // When increasing quantity, guard against low/insufficient stock
+      if (delta > 0 && prod && prod.stock !== undefined) {
+        if (availableStock === 0) {
+          setStockWarning(`⚠️ "${prod.name}" is Out of Stock today (0 available).`);
+          return prev;
+        }
+        if (current + delta > availableStock) {
+          setStockWarning(
+            `⚠️ Stock is low! Only ${availableStock} available in stock today for "${prod.name}". Cannot add more.`
+          );
+          return prev;
+        }
+      }
+
+      setStockWarning(null);
       const next = Math.max(0, current + delta);
       if (next === 0) {
         const copy = { ...prev };
@@ -89,17 +109,38 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
     });
   };
 
-  // Direct Type Quantity
+  // Direct Type Quantity with Stock Validation & Auto-Cap Warning
   const handleDirectQty = (productId: string, valStr: string) => {
+    const prod = allProducts.find((p) => p.id === productId);
+    const availableStock = prod?.stock ?? 0;
     const parsed = parseInt(valStr, 10);
-    const next = isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const rawNext = isNaN(parsed) ? 0 : Math.max(0, parsed);
+
+    if (prod && prod.stock !== undefined && rawNext > availableStock) {
+      // Customer booked more than available stock (e.g. 50 requested, 15 available)
+      setStockWarning(
+        `⚠️ Stock is low! Customer requested ${rawNext} ${prod.unit}s, but only ${availableStock} available in stock today for "${prod.name}". Quantity adjusted to available stock (${availableStock}).`
+      );
+
+      setCart((prev) => {
+        if (availableStock === 0) {
+          const copy = { ...prev };
+          delete copy[productId];
+          return copy;
+        }
+        return { ...prev, [productId]: availableStock };
+      });
+      return;
+    }
+
+    setStockWarning(null);
     setCart((prev) => {
-      if (next === 0) {
+      if (rawNext === 0) {
         const copy = { ...prev };
         delete copy[productId];
         return copy;
       }
-      return { ...prev, [productId]: next };
+      return { ...prev, [productId]: rawNext };
     });
   };
 
@@ -498,6 +539,35 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
               })}
             </div>
 
+            {/* Live Stock Warning Alert Banner */}
+            {stockWarning && (
+              <div
+                style={{
+                  background: '#FEF2F2',
+                  border: '1.5px solid #FCA5A5',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 14px',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  fontSize: '12.5px',
+                  color: '#991B1B',
+                  lineHeight: '1.4'
+                }}
+              >
+                <AlertTriangle size={18} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>{stockWarning}</div>
+                <button
+                  type="button"
+                  onClick={() => setStockWarning(null)}
+                  style={{ background: 'none', border: 'none', color: '#991B1B', fontWeight: 700, cursor: 'pointer', padding: '0 4px' }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Product Items List with 1-Tap Stepper */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {filteredProducts.length === 0 ? (
@@ -507,6 +577,9 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
               ) : (
                 filteredProducts.map((prod) => {
                   const qty = cart[prod.id] || 0;
+                  const availableStock = prod.stock ?? 0;
+                  const isOut = prod.stock === 0 || prod.stock === undefined;
+                  const isLow = prod.stock !== undefined && prod.stock <= (prod.lowStockThreshold || 15);
 
                   return (
                     <div
@@ -568,41 +641,76 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                           <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', marginTop: '2px' }}>
                             ₹{prod.sellPrice} <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 400 }}>/{prod.unit}</span>
                           </div>
+
+                          {/* Available Stock & Expiry Information Badges */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                            {isOut ? (
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', background: '#FEE2E2', padding: '2px 6px', borderRadius: '4px' }}>
+                                ❌ Out of Stock (0 today)
+                              </span>
+                            ) : isLow ? (
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '2px 6px', borderRadius: '4px' }}>
+                                ⚠️ Low Stock: {prod.stock} available today
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: '#047857', background: '#ECFDF5', padding: '2px 6px', borderRadius: '4px' }}>
+                                ✓ Available: {prod.stock} {prod.unit}
+                              </span>
+                            )}
+                            {prod.expiryDate && (
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', background: '#F1F5F9', padding: '2px 5px', borderRadius: '4px' }}>
+                                Exp: {prod.expiryDate}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       {/* 1-Tap Stepper & Direct Typing Input */}
-                      <div className="quantity-stepper">
-                        <button
-                          className="step-btn"
-                          onClick={() => updateQty(prod.id, -1)}
-                          disabled={qty === 0}
-                          style={{ opacity: qty === 0 ? 0.35 : 1 }}
-                          title="Decrease Quantity"
-                        >
-                          <Minus size={14} />
-                        </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <div className="quantity-stepper">
+                          <button
+                            className="step-btn"
+                            onClick={() => updateQty(prod.id, -1)}
+                            disabled={qty === 0}
+                            style={{ opacity: qty === 0 ? 0.35 : 1 }}
+                            title="Decrease Quantity"
+                          >
+                            <Minus size={14} />
+                          </button>
 
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          min="0"
-                          className="step-input"
-                          value={qty === 0 ? '' : qty}
-                          placeholder="0"
-                          onChange={(e) => handleDirectQty(prod.id, e.target.value)}
-                          onClick={(e) => (e.target as HTMLInputElement).select()}
-                          title="Type quantity directly or use +/-"
-                        />
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            min="0"
+                            max={prod.stock !== undefined ? prod.stock : undefined}
+                            className="step-input"
+                            value={qty === 0 ? '' : qty}
+                            placeholder="0"
+                            onChange={(e) => handleDirectQty(prod.id, e.target.value)}
+                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                            title="Type quantity directly or use +/-"
+                            style={{
+                              borderColor: prod.stock !== undefined && qty >= availableStock && availableStock > 0 ? '#D97706' : undefined
+                            }}
+                          />
 
-                        <button
-                          className="step-btn"
-                          onClick={() => updateQty(prod.id, 1)}
-                          title="Increase Quantity"
-                        >
-                          <Plus size={14} />
-                        </button>
+                          <button
+                            className="step-btn"
+                            onClick={() => updateQty(prod.id, 1)}
+                            disabled={prod.stock !== undefined && qty >= availableStock}
+                            style={{ opacity: prod.stock !== undefined && qty >= availableStock ? 0.35 : 1 }}
+                            title={prod.stock !== undefined && qty >= availableStock ? `Max available stock (${availableStock}) reached` : 'Increase Quantity'}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                        {prod.stock !== undefined && qty >= availableStock && availableStock > 0 && (
+                          <span style={{ fontSize: '10px', color: '#B45309', fontWeight: 600 }}>
+                            Max {availableStock} reached
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

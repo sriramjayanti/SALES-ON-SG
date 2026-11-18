@@ -71,7 +71,14 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
     setAmountPaidInput(val.toString());
   };
 
+  const overstockItem = items.find((i) => i.product.stock !== undefined && i.qty > i.product.stock);
+
   const handleSaveOrder = () => {
+    if (overstockItem) {
+      alert(`⚠️ Stock Alert: ${overstockItem.product.name} requested quantity (${overstockItem.qty}) exceeds available stock today (${overstockItem.product.stock}). Please adjust the order quantity before saving.`);
+      return;
+    }
+
     const newOrder = StorageService.finalizeOrder({
       shopId: shop.id,
       routeId: shop.routeId,
@@ -187,22 +194,37 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.product.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <td style={{ padding: '12px 14px', fontWeight: 500, color: 'var(--text-primary)' }}>
-                    {item.product.name}
-                  </td>
-                  <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 600 }}>
-                    {item.qty}
-                  </td>
-                  <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-secondary)' }}>
-                    ₹{item.price}
-                  </td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    ₹{item.amount}
-                  </td>
-                </tr>
-              ))}
+              {items.map((item) => {
+                const isOverstock = item.product.stock !== undefined && item.qty > item.product.stock;
+                const isLow = item.product.stock !== undefined && item.product.stock <= 15;
+
+                return (
+                  <tr key={item.product.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                    <td style={{ padding: '12px 14px', color: 'var(--text-primary)' }}>
+                      <div style={{ fontWeight: 600 }}>{item.product.name}</div>
+                      <div style={{ fontSize: '11px', marginTop: '2px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ color: isOverstock ? '#DC2626' : isLow ? '#B45309' : 'var(--text-secondary)', fontWeight: isOverstock || isLow ? 600 : 400 }}>
+                          Available Today: {item.product.stock ?? 0} {item.product.unit}
+                        </span>
+                        {isOverstock && (
+                          <span style={{ color: '#DC2626', fontWeight: 700 }}>
+                            ⚠️ Exceeds Stock!
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 600, color: isOverstock ? '#DC2626' : 'inherit' }}>
+                      {item.qty}
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-secondary)' }}>
+                      ₹{item.price}
+                    </td>
+                    <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      ₹{item.amount}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
@@ -472,11 +494,42 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
           </div>
         </div>
 
+        {/* Overstock Warning Banner */}
+        {overstockItem && (
+          <div
+            style={{
+              background: '#FEF2F2',
+              border: '1px solid #FCA5A5',
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              color: '#991B1B',
+              fontSize: '13px',
+              marginTop: '16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'center'
+            }}
+          >
+            <AlertCircle size={20} color="#DC2626" style={{ flexShrink: 0 }} />
+            <div>
+              <strong>Stock Warning:</strong> {overstockItem.product.name} quantity ({overstockItem.qty}) exceeds available stock today ({overstockItem.product.stock}). Please reduce quantity to proceed.
+            </div>
+          </div>
+        )}
+
         {/* Submit Save Order CTA */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
           <button
             className="btn-primary"
-            style={{ width: '100%', padding: '14px', fontSize: '15px', justifyContent: 'center' }}
+            disabled={Boolean(overstockItem)}
+            style={{
+              width: '100%',
+              padding: '14px',
+              fontSize: '15px',
+              justifyContent: 'center',
+              opacity: overstockItem ? 0.5 : 1,
+              cursor: overstockItem ? 'not-allowed' : 'pointer'
+            }}
             onClick={handleSaveOrder}
           >
             Confirm & Save Order (₹{grandTotal.toLocaleString()})

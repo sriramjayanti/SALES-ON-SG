@@ -568,7 +568,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                 type="text"
                 value={newRouteArea}
                 onChange={(e) => setNewRouteArea(e.target.value)}
-                placeholder="e.g. Surat Central"
+                placeholder="e.g. Vijayawada Central"
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>
