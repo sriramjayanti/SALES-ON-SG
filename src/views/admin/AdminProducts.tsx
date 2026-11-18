@@ -717,16 +717,16 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
           {/* Inventory Stock & Expiry Tracking (Required Stock with NO default, Optional Expiry) */}
           <div style={{ background: '#F0FDF4', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #BBF7D0' }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Package size={16} /> Available Stock & Expiry Tracking
+              <Package size={16} /> Available Stock Quantity & Expiry Tracking
             </div>
             <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-              Enter available inventory quantity. No default stock is assumed. Admin can adjust stock anytime. Expiry date is optional.
+              Type the exact number of units currently available. No default stock is used. Admin can update stock anytime. Expiry date is optional.
             </div>
 
             <div className="form-grid-2">
               <div>
                 <label style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Quantity Available in Stock *
+                  Available Quantity (Type Available Number) *
                 </label>
                 <input
                   type="number"
@@ -734,7 +734,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                   min={0}
                   value={stock}
                   onChange={(e) => setStock(e.target.value)}
-                  placeholder="Enter available quantity (e.g. 50)"
+                  placeholder="Type available quantity (e.g. 50)"
                   style={{
                     width: '100%',
                     marginTop: '4px',
@@ -745,7 +745,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                 />
                 {stock.trim() === '' && (
                   <div style={{ fontSize: '11px', color: '#DC2626', marginTop: '2px' }}>
-                    Required: Please enter available quantity (no default stock).
+                    Required: Please type the available number of quantities.
                   </div>
                 )}
               </div>
@@ -765,7 +765,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
 
             <div style={{ marginTop: '10px' }}>
               <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Low Stock Warning Threshold (Alerts when stock falls to or below this quantity)
+                Low Stock Alert Threshold (Warns when stock falls to or below this quantity)
               </label>
               <input
                 type="number"
@@ -778,11 +778,11 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
             </div>
           </div>
 
-          {/* Quantity / Unit Section with Preset & Custom Options */}
+          {/* Packaging Unit Section with Preset & Custom Options */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
               <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Quantity / Pack Unit *
+                Packaging Unit / Type *
               </label>
               <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>
                 Selected: {selectedUnitType === 'custom' ? (customUnit || 'Custom (typing...)') : selectedUnitType}
