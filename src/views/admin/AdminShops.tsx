@@ -415,67 +415,74 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
                   </span>
                 </td>
 
-                <td style={{ textAlign: 'right' }}>
-                  {/* Action buttons stacked vertically - NOT side by side */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
+                <td style={{ textAlign: 'right', verticalAlign: 'middle', padding: '14px 10px' }}>
+                  {/* Action buttons with generous safety space between Edit and Delete */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'flex-end', justifyContent: 'center' }}>
                     <button
                       onClick={() => openEditShop(shop)}
                       style={{
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        background: 'var(--bg-main)',
+                        minWidth: '85px',
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        background: '#F0FDF4',
                         color: 'var(--primary)',
-                        border: '1px solid var(--border)',
-                        fontSize: '11.5px',
-                        fontWeight: 600,
+                        border: '1.5px solid var(--primary)',
+                        fontSize: '12px',
+                        fontWeight: 700,
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        cursor: 'pointer'
+                        justifyContent: 'center',
+                        gap: '5px',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                       }}
                       title="Edit Shop Details & Photo"
                     >
-                      <Edit2 size={12} /> Edit
+                      <Edit2 size={13} /> Edit
                     </button>
                     {isShopDeleted ? (
                       <button
                         onClick={() => setShopToRestore(shop)}
                         style={{
-                          padding: '4px 10px',
-                          borderRadius: '4px',
-                          background: '#e6f4ea',
+                          minWidth: '85px',
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          background: '#E6F4EA',
                           color: '#137333',
-                          border: 'none',
+                          border: '1px solid #A7F3D0',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '11.5px',
-                          fontWeight: 600
+                          justifyContent: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          fontWeight: 700
                         }}
                         title="Restore Shop"
                       >
-                        <RotateCcw size={12} /> Restore
+                        <RotateCcw size={13} /> Restore
                       </button>
                     ) : (
                       <button
                         onClick={() => setShopToDelete(shop)}
                         style={{
-                          padding: '4px 10px',
-                          borderRadius: '4px',
-                          background: 'var(--danger-light)',
-                          color: 'var(--danger)',
-                          border: 'none',
+                          minWidth: '85px',
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          background: '#FEF2F2',
+                          color: '#DC2626',
+                          border: '1px solid #FECACA',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '11.5px',
-                          fontWeight: 600
+                          justifyContent: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          fontWeight: 700
                         }}
                         title="Delete Shop"
                       >
-                        <Trash2 size={12} /> Delete
+                        <Trash2 size={13} /> Delete
                       </button>
                     )}
                   </div>

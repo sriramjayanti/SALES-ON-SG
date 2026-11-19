@@ -550,63 +550,70 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
                       {ord.dateString}
                     </td>
 
-                    {/* View Invoice, Delete & Restore Actions - Stacked Vertically, NOT Side by Side */}
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
+                    {/* View Invoice, Delete & Restore Actions - Generous Safety Spacing */}
+                    <td style={{ textAlign: 'right', verticalAlign: 'middle', padding: '14px 10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end', justifyContent: 'center' }}>
                         <button
                           onClick={() => onViewInvoice(ord)}
                           style={{
-                            padding: '4px 10px',
-                            borderRadius: '4px',
-                            background: 'var(--primary-light)',
+                            minWidth: '95px',
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            background: '#F0FDF4',
                             color: 'var(--primary)',
-                            fontSize: '11.5px',
-                            fontWeight: 600,
+                            fontSize: '12px',
+                            fontWeight: 700,
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px',
-                            border: 'none',
-                            cursor: 'pointer'
+                            justifyContent: 'center',
+                            gap: '5px',
+                            border: '1.5px solid var(--primary)',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                           }}
                           title="View Full Bill & Receipt"
                         >
-                          <Eye size={12} /> View Bill
+                          <Eye size={13} /> View Bill
                         </button>
 
                         {isOrderDeleted ? (
                           <button
                             onClick={() => setOrderToRestore(ord)}
                             style={{
-                              padding: '4px 10px',
-                              borderRadius: '4px',
-                              background: '#e6f4ea',
+                              minWidth: '95px',
+                              padding: '6px 14px',
+                              borderRadius: '6px',
+                              background: '#E6F4EA',
                               color: '#137333',
-                              fontSize: '11.5px',
-                              fontWeight: 600,
+                              border: '1px solid #A7F3D0',
+                              fontSize: '12px',
+                              fontWeight: 700,
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '4px',
-                              border: 'none',
+                              justifyContent: 'center',
+                              gap: '5px',
                               cursor: 'pointer'
                             }}
                             title="Restore Order"
                           >
-                            <RotateCcw size={12} /> Restore
+                            <RotateCcw size={13} /> Restore
                           </button>
                         ) : (
                           <>
                             <button
                               onClick={() => setCancelModalOrder(ord)}
                               style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
+                                minWidth: '95px',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
                                 background: '#FFFBEB',
                                 color: '#B45309',
                                 border: '1px solid #FDE68A',
-                                fontSize: '11px',
+                                fontSize: '11.5px',
                                 fontWeight: 600,
                                 display: 'inline-flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}
@@ -618,15 +625,17 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
                             <button
                               onClick={() => setOrderToDelete(ord)}
                               style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                background: 'var(--danger-light)',
-                                color: 'var(--danger)',
-                                border: 'none',
-                                fontSize: '11px',
-                                fontWeight: 600,
+                                minWidth: '95px',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
+                                background: '#FEF2F2',
+                                color: '#DC2626',
+                                border: '1px solid #FECACA',
+                                fontSize: '11.5px',
+                                fontWeight: 700,
                                 display: 'inline-flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}

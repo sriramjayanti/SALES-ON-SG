@@ -338,21 +338,23 @@ export const AdminEmployees: React.FC = () => {
                   </span>
                 </td>
 
-                <td style={{ textAlign: 'right' }}>
-                  {/* Action buttons stacked vertically - NOT side by side */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
+                <td style={{ textAlign: 'right', verticalAlign: 'middle', padding: '14px 10px' }}>
+                  {/* Action buttons with generous safety space between actions */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end', justifyContent: 'center' }}>
                     <button
                       onClick={() => openResetPasswordModal(emp)}
                       style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
+                        minWidth: '92px',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
                         background: '#EEF2FF',
                         color: '#4F46E5',
                         border: '1px solid #C7D2FE',
                         display: 'inline-flex',
                         alignItems: 'center',
+                        justifyContent: 'center',
                         gap: '4px',
-                        fontSize: '11px',
+                        fontSize: '11.5px',
                         fontWeight: 600,
                         cursor: 'pointer'
                       }}
@@ -364,21 +366,23 @@ export const AdminEmployees: React.FC = () => {
                     <button
                       onClick={() => openEditEmployee(emp)}
                       style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        background: 'var(--bg-main)',
+                        minWidth: '92px',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        background: '#F0FDF4',
                         color: 'var(--primary)',
-                        border: '1px solid var(--border)',
+                        border: '1.5px solid var(--primary)',
                         display: 'inline-flex',
                         alignItems: 'center',
+                        justifyContent: 'center',
                         gap: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        fontWeight: 700,
                         cursor: 'pointer'
                       }}
                       title="Edit Profile, Categories & RBAC"
                     >
-                      <Edit2 size={12} /> Edit
+                      <Edit2 size={12} /> Edit Profile
                     </button>
 
                     {emp.id !== 'emp_admin' && (
@@ -386,16 +390,18 @@ export const AdminEmployees: React.FC = () => {
                         <button
                           onClick={() => setEmpToRestore(emp)}
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            background: '#e6f4ea',
+                            minWidth: '92px',
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            background: '#E6F4EA',
                             color: '#137333',
-                            border: 'none',
+                            border: '1px solid #A7F3D0',
                             display: 'inline-flex',
                             alignItems: 'center',
+                            justifyContent: 'center',
                             gap: '4px',
-                            fontSize: '11px',
-                            fontWeight: 600,
+                            fontSize: '11.5px',
+                            fontWeight: 700,
                             cursor: 'pointer'
                           }}
                           title="Restore Employee"
@@ -406,16 +412,18 @@ export const AdminEmployees: React.FC = () => {
                         <button
                           onClick={() => setEmpToDelete(emp)}
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            background: 'var(--danger-light)',
-                            color: 'var(--danger)',
-                            border: 'none',
+                            minWidth: '92px',
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            background: '#FEF2F2',
+                            color: '#DC2626',
+                            border: '1px solid #FECACA',
                             display: 'inline-flex',
                             alignItems: 'center',
+                            justifyContent: 'center',
                             gap: '4px',
-                            fontSize: '11px',
-                            fontWeight: 600,
+                            fontSize: '11.5px',
+                            fontWeight: 700,
                             cursor: 'pointer'
                           }}
                           title="Delete Employee"
