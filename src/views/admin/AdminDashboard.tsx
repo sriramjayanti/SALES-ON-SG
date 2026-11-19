@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShoppingBag,
   TrendingUp,
@@ -28,6 +28,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onViewInvoice
 }) => {
   const db = StorageService.getDb();
+  const [, setTick] = useState(0);
+
+  // Live real-time subscription for automatic bill arrival from staff logins
+  useEffect(() => {
+    return StorageService.subscribe(() => {
+      setTick((t) => t + 1);
+    });
+  }, []);
 
   // Metrics: Orders & Delivery
   const totalOrdersCount = db.orders.length;

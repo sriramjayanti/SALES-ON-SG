@@ -147,6 +147,7 @@ export const FirestoreSync = {
             if (idx >= 0) merged[idx] = rem;
             else merged.push(rem);
           });
+          merged.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
           return { ...prev, orders: merged };
         });
       }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Plus,
   Check,
-  Play
+  Play,
+  CreditCard
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { Employee, Route, Shop, Visit } from '../../types';
@@ -30,6 +31,14 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   onOpenShop
 }) => {
   const db = StorageService.getDb();
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    return StorageService.subscribe(() => {
+      setTick((t) => t + 1);
+    });
+  }, []);
+
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -83,6 +92,25 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     const v = visitsForDate.find((vis) => vis.shopId === s.id);
     return v && (v.status === 'completed' || v.status === 'order_placed');
   }).length;
+
+  // Pending Payments on this Route & Today
+  const routeShopIds = currentRoute?.orderedShopIds || [];
+  const routeUnpaidOrders = db.orders.filter(
+    (o) => (o.routeId === currentRoute?.id || routeShopIds.includes(o.shopId)) &&
+           o.status === 'completed' &&
+           o.paymentStatus !== 'paid' &&
+           !o.isDeleted
+  );
+  const totalPendingRouteDues = routeUnpaidOrders.reduce(
+    (sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)),
+    0
+  );
+
+  const todayRouteUnpaidOrders = routeUnpaidOrders.filter((o) => o.dateString === selectedDate);
+  const todayPendingRouteDues = todayRouteUnpaidOrders.reduce(
+    (sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)),
+    0
+  );
 
   // New Route Creation State
   const [isCreateRouteOpen, setIsCreateRouteOpen] = useState(false);
@@ -261,6 +289,40 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
               </span>
             </div>
 
+            {/* Pending Payments on that Day / Route Banner */}
+            <div
+              style={{
+                marginTop: '12px',
+                padding: '10px 14px',
+                background: totalPendingRouteDues > 0 ? '#FEF2F2' : '#F0FDF4',
+                border: totalPendingRouteDues > 0 ? '1px solid #FECACA' : '1px solid #BBF7D0',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={18} color={totalPendingRouteDues > 0 ? '#DC2626' : '#16A34A'} />
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: totalPendingRouteDues > 0 ? '#991B1B' : '#166534' }}>
+                    Pending Payments on Route
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                    Today's Pending: ₹{todayPendingRouteDues.toLocaleString()} • Total Route Due: ₹{totalPendingRouteDues.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: totalPendingRouteDues > 0 ? '#DC2626' : '#16A34A' }}>
+                  ₹{totalPendingRouteDues.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '9.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Total Dues
+                </div>
+              </div>
+            </div>
+
             {/* Multi-Agent Workload Toggle */}
             {hasMultiAgent && myOrderedShops.length > 0 && (
               <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
@@ -341,6 +403,15 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
               const isCompleted = visit?.status === 'completed' || visit?.status === 'order_placed';
               const isStarted = visit?.status === 'started';
               const isSkipped = visit?.status === 'skipped' || visit?.status === 'no_order';
+
+              // Shop unpaid dues
+              const shopUnpaidOrders = db.orders.filter(
+                (o) => o.shopId === shop.id && o.status === 'completed' && o.paymentStatus !== 'paid' && !o.isDeleted
+              );
+              const shopPendingDue = shopUnpaidOrders.reduce(
+                (sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)),
+                0
+              );
 
               return (
                 <div
@@ -463,6 +534,27 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {shop.locality || shop.address}
                     </div>
+
+                    {shopPendingDue > 0 && (
+                      <div style={{ marginTop: '5px' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            background: '#FEF2F2',
+                            color: '#DC2626',
+                            border: '1px solid #FECACA',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <CreditCard size={11} /> Due: ₹{shopPendingDue.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action / Status Chip */}

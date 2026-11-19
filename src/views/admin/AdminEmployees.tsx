@@ -339,11 +339,12 @@ export const AdminEmployees: React.FC = () => {
                 </td>
 
                 <td style={{ textAlign: 'right' }}>
-                  <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                  {/* Action buttons stacked vertically - NOT side by side */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
                     <button
                       onClick={() => openResetPasswordModal(emp)}
                       style={{
-                        padding: '6px 10px',
+                        padding: '4px 8px',
                         borderRadius: '4px',
                         background: '#EEF2FF',
                         color: '#4F46E5',
@@ -351,21 +352,33 @@ export const AdminEmployees: React.FC = () => {
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
-                        fontSize: '11.5px',
+                        fontSize: '11px',
                         fontWeight: 600,
                         cursor: 'pointer'
                       }}
                       title="Reset Employee Password"
                     >
-                      <Key size={13} /> Reset Pass
+                      <Key size={12} /> Reset Pass
                     </button>
 
                     <button
                       onClick={() => openEditEmployee(emp)}
-                      className="btn-action-icon"
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        background: 'var(--bg-main)',
+                        color: 'var(--primary)',
+                        border: '1px solid var(--border)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
                       title="Edit Profile, Categories & RBAC"
                     >
-                      <Edit2 size={14} />
+                      <Edit2 size={12} /> Edit
                     </button>
 
                     {emp.id !== 'emp_admin' && (
@@ -373,7 +386,7 @@ export const AdminEmployees: React.FC = () => {
                         <button
                           onClick={() => setEmpToRestore(emp)}
                           style={{
-                            padding: '6px 10px',
+                            padding: '4px 8px',
                             borderRadius: '4px',
                             background: '#e6f4ea',
                             color: '#137333',
@@ -381,21 +394,33 @@ export const AdminEmployees: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            fontSize: '12px',
+                            fontSize: '11px',
                             fontWeight: 600,
                             cursor: 'pointer'
                           }}
                           title="Restore Employee"
                         >
-                          <RotateCcw size={13} /> Restore
+                          <RotateCcw size={12} /> Restore
                         </button>
                       ) : (
                         <button
                           onClick={() => setEmpToDelete(emp)}
-                          className="btn-action-icon delete"
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            background: 'var(--danger-light)',
+                            color: 'var(--danger)',
+                            border: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
                           title="Delete Employee"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} /> Delete
                         </button>
                       )
                     )}

@@ -87,6 +87,15 @@ function notify() {
   listeners.forEach(cb => cb());
 }
 
+// Cross-tab / cross-window instant synchronization for orders & database changes
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === STORAGE_KEY || event.key === null) {
+      notify();
+    }
+  });
+}
+
 export const StorageService = {
   subscribe(listener: Listener) {
     listeners.add(listener);
@@ -317,6 +326,7 @@ export const StorageService = {
       stock: Number(productData.stock) >= 0 ? Number(productData.stock) : 0,
       expiryDate: productData.expiryDate?.trim() || undefined,
       lowStockThreshold: Number(productData.lowStockThreshold) > 0 ? Number(productData.lowStockThreshold) : 15,
+      netAmount: productData.netAmount !== undefined ? Number(productData.netAmount) : undefined,
       id: `prod_${Date.now()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -341,6 +351,7 @@ export const StorageService = {
         stock: updates.stock !== undefined ? Number(updates.stock) : old.stock,
         expiryDate: updates.expiryDate !== undefined ? (updates.expiryDate.trim() || undefined) : old.expiryDate,
         lowStockThreshold: updates.lowStockThreshold !== undefined ? Number(updates.lowStockThreshold) : (old.lowStockThreshold || 15),
+        netAmount: updates.netAmount !== undefined ? Number(updates.netAmount) : old.netAmount,
         updatedAt: new Date().toISOString()
       };
       this.saveDb(db);

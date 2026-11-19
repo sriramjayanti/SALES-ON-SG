@@ -267,6 +267,7 @@ export const AdminRoutesCalendar: React.FC = () => {
                 <th>Area / Locality</th>
                 <th>Assigned Sales Team</th>
                 <th>Shops Count</th>
+                <th>Pending Payments</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Action</th>
               </tr>
@@ -279,6 +280,19 @@ export const AdminRoutesCalendar: React.FC = () => {
                 ).map((id) => db.employees.find((e) => e.id === id)).filter(Boolean) as Employee[];
 
                 const isRouteDeleted = route.isDeleted || route.active === false;
+
+                // Pending payments calculation for this route
+                const routeShopIds = route.orderedShopIds || [];
+                const routeUnpaidOrders = db.orders.filter(
+                  (o) => (o.routeId === route.id || routeShopIds.includes(o.shopId)) &&
+                         o.status === 'completed' &&
+                         o.paymentStatus !== 'paid' &&
+                         !o.isDeleted
+                );
+                const routePendingAmount = routeUnpaidOrders.reduce(
+                  (sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)),
+                  0
+                );
 
                 return (
                   <tr key={route.id}>
@@ -323,55 +337,86 @@ export const AdminRoutesCalendar: React.FC = () => {
                       </span>
                     </td>
                     <td>
+                      {routePendingAmount > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ color: '#DC2626', fontWeight: 700, fontSize: '13px' }}>
+                            ₹{routePendingAmount.toLocaleString()}
+                          </span>
+                          <span style={{ fontSize: '10.5px', color: '#B91C1C' }}>
+                            {routeUnpaidOrders.length} unpaid bill{routeUnpaidOrders.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#16A34A', fontSize: '12px', fontWeight: 600 }}>
+                          ✓ Cleared (₹0)
+                        </span>
+                      )}
+                    </td>
+                    <td>
                       <span className={`status-chip ${isRouteDeleted ? 'inactive' : 'active'}`}>
                         {isRouteDeleted ? 'Deleted (Soft)' : 'Active'}
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                      {/* Action buttons stacked vertically - NOT side by side */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
                         <button
                           onClick={() => openEditRoute(route)}
-                          style={{ padding: '6px 12px', borderRadius: '4px', background: 'var(--bg-main)', color: 'var(--primary)', fontWeight: 600, fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            background: 'var(--bg-main)',
+                            color: 'var(--primary)',
+                            fontWeight: 600,
+                            fontSize: '11.5px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid var(--border)',
+                            cursor: 'pointer'
+                          }}
                         >
-                          <Edit2 size={13} /> Edit Route
+                          <Edit2 size={12} /> Edit Route
                         </button>
                         {isRouteDeleted ? (
                           <button
                             onClick={() => setRouteToRestore(route)}
                             style={{
-                              padding: '6px 10px',
+                              padding: '4px 10px',
                               borderRadius: '4px',
                               background: '#e6f4ea',
                               color: '#137333',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
-                              fontSize: '12px',
+                              fontSize: '11.5px',
                               fontWeight: 600,
-                              cursor: 'pointer'
+                              cursor: 'pointer',
+                              border: 'none'
                             }}
                             title="Restore Route"
                           >
-                            <RotateCcw size={13} /> Restore
+                            <RotateCcw size={12} /> Restore
                           </button>
                         ) : (
                           <button
                             onClick={() => setRouteToDelete(route)}
                             style={{
-                              padding: '6px 10px',
+                              padding: '4px 10px',
                               borderRadius: '4px',
                               background: 'var(--danger-light)',
                               color: 'var(--danger)',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
-                              fontSize: '12px',
+                              fontSize: '11.5px',
                               fontWeight: 600,
-                              cursor: 'pointer'
+                              cursor: 'pointer',
+                              border: 'none'
                             }}
                             title="Delete Route (Soft Delete)"
                           >
-                            <Trash2 size={13} /> Delete
+                            <Trash2 size={12} /> Delete
                           </button>
                         )}
                       </div>

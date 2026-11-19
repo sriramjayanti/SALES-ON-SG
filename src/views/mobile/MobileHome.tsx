@@ -96,12 +96,23 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   const pendingDeliveries = todayOrders.filter((o) => o.deliveryStatus === 'pending');
   const pendingDeliveryAmount = pendingDeliveries.reduce((sum, o) => sum + o.grandTotal, 0);
 
+  // Pending payments on current route & today
+  const routeUnpaidOrders = db.orders.filter(
+    (o) =>
+      (o.routeId === currentRoute?.id || routeShopIds.includes(o.shopId)) &&
+      o.status === 'completed' &&
+      o.paymentStatus !== 'paid' &&
+      !o.isDeleted
+  );
+  const routePendingDue = routeUnpaidOrders.reduce((sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)), 0);
+
   // Pending payments (orders placed but not yet paid)
   const unpaidOrders = db.orders.filter(
     (o) =>
-      (currentUser.role === 'super_admin' || currentUser.role === 'admin' || o.employeeId === currentUser.id) &&
+      (currentUser.role === 'super_admin' || currentUser.role === 'admin' || o.employeeId === currentUser.id || o.routeId === currentRoute?.id) &&
       o.status === 'completed' &&
-      o.paymentStatus !== 'paid'
+      o.paymentStatus !== 'paid' &&
+      !o.isDeleted
   );
   const totalUnpaidDue = unpaidOrders.reduce((sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)), 0);
 
@@ -586,12 +597,12 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13.5px', color: '#991B1B' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: '#991B1B' }}>
                 <AlertTriangle size={16} color="#DC2626" />
-                Pending Payments ({unpaidOrders.length} shops)
+                Pending Payments ({currentRoute?.name || 'Route'}: ₹{routePendingDue.toLocaleString()})
               </div>
               <span style={{ fontSize: '13px', fontWeight: 800, color: '#DC2626' }}>
-                ₹{totalUnpaidDue.toLocaleString()} Due
+                ₹{totalUnpaidDue.toLocaleString()} Total Due
               </span>
             </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   Eye,
@@ -12,7 +12,8 @@ import {
   Store,
   Calendar,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  Radio
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { Order, Employee } from '../../types';
@@ -27,8 +28,18 @@ interface AdminOrdersProps {
 
 export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInvoice, onBack }) => {
   const db = StorageService.getDb();
+  const [, setTick] = useState(0);
+
+  // Live real-time subscription for automatic bill arrival from staff logins
+  useEffect(() => {
+    return StorageService.subscribe(() => {
+      setTick((t) => t + 1);
+    });
+  }, []);
+
   const [search, setSearch] = useState('');
   const [routeFilter, setRouteFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'unpaid' | 'pending_delivery' | 'delivered' | 'cancelled_deleted'>('all');
 
   // In-App Delete & Restore Order State
@@ -74,6 +85,23 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
   const deliveredOrders = totalOrders.filter((o) => o.status === 'completed' && o.deliveryStatus === 'delivered' && !isDeletedOrCancelled(o));
   const cancelledOrDeletedOrders = totalOrders.filter((o) => isDeletedOrCancelled(o));
 
+  // Pending Payments on that Day / Route
+  const pendingByRouteAndDay = totalOrders.filter((o) => {
+    if (isDeletedOrCancelled(o)) return false;
+    if (o.status !== 'completed' || o.paymentStatus === 'paid') return false;
+    const matchesRoute = routeFilter === 'all' || o.routeId === routeFilter;
+    const matchesDate = dateFilter === 'all' || o.dateString === dateFilter;
+    return matchesRoute && matchesDate;
+  });
+
+  const totalPendingOnSelection = pendingByRouteAndDay.reduce(
+    (sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)),
+    0
+  );
+
+  // Available unique dates for day filter
+  const uniqueDates = Array.from(new Set(totalOrders.map((o) => o.dateString))).sort().reverse();
+
   // Filtering
   const filteredOrders = totalOrders.filter((o) => {
     const matchesSearch =
@@ -84,8 +112,9 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
       o.employeeNameSnapshot.toLowerCase().includes(search.toLowerCase());
 
     const matchesRoute = routeFilter === 'all' || o.routeId === routeFilter;
+    const matchesDate = dateFilter === 'all' || o.dateString === dateFilter;
 
-    if (!matchesSearch || !matchesRoute) return false;
+    if (!matchesSearch || !matchesRoute || !matchesDate) return false;
 
     const isDeleted = isDeletedOrCancelled(o);
     if (activeTab === 'unpaid') return o.status === 'completed' && o.paymentStatus !== 'paid' && !isDeleted;
@@ -121,9 +150,14 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
           </div>
         </div>
 
-        {/* Search & Route Filters */}
+        {/* Search, Route & Day Filters with Live Sync Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', width: '220px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', padding: '5px 12px', borderRadius: 'var(--radius-full)', fontSize: '11.5px', fontWeight: 700 }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+            Live Bills Stream (Auto-updating)
+          </div>
+
+          <div style={{ position: 'relative', width: '200px' }}>
             <Search
               size={15}
               color="var(--text-secondary)"
@@ -138,6 +172,7 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
             />
           </div>
 
+          {/* Route Filter */}
           <select value={routeFilter} onChange={(e) => setRouteFilter(e.target.value)}>
             <option value="all">All Routes</option>
             {db.routes.map((r) => (
@@ -146,6 +181,87 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
               </option>
             ))}
           </select>
+
+          {/* Day / Date Filter */}
+          <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
+            <option value="all">All Days / Dates</option>
+            {uniqueDates.map((d) => (
+              <option key={d} value={d}>
+                Date: {d}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* PENDING PAYMENTS ON THAT DAY / ROUTE BANNER */}
+      <div
+        style={{
+          background: totalPendingOnSelection > 0 ? '#FEF2F2' : '#F0FDF4',
+          border: totalPendingOnSelection > 0 ? '1px solid #FECACA' : '1px solid #BBF7D0',
+          borderRadius: 'var(--radius-md)',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              background: totalPendingOnSelection > 0 ? '#DC2626' : '#16A34A',
+              color: '#FFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {totalPendingOnSelection > 0 ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+          </div>
+          <div>
+            <div style={{ fontSize: '13.5px', fontWeight: 700, color: totalPendingOnSelection > 0 ? '#991B1B' : '#15803D' }}>
+              Pending Payments on {routeFilter === 'all' ? 'All Routes' : (db.routes.find(r => r.id === routeFilter)?.name || 'Selected Route')} {dateFilter === 'all' ? '(All Dates)' : `for ${dateFilter}`}
+            </div>
+            <div style={{ fontSize: '11.5px', color: totalPendingOnSelection > 0 ? '#B91C1C' : '#166534' }}>
+              {totalPendingOnSelection > 0
+                ? `${pendingByRouteAndDay.length} bill(s) pending payment on this route/day`
+                : 'All bills on this day & route are fully paid / cleared'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: totalPendingOnSelection > 0 ? '#DC2626' : '#15803D' }}>
+              ₹{totalPendingOnSelection.toLocaleString()}
+            </div>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Outstanding Balance Due
+            </div>
+          </div>
+
+          {totalPendingOnSelection > 0 && activeTab !== 'unpaid' && (
+            <button
+              onClick={() => setActiveTab('unpaid')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '11.5px',
+                background: '#DC2626',
+                color: '#FFF',
+                border: 'none',
+                borderRadius: '4px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Filter Unpaid Bills
+            </button>
+          )}
         </div>
       </div>
 
@@ -434,84 +550,89 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ currentUser, onViewInv
                       {ord.dateString}
                     </td>
 
-                    {/* View Invoice, Delete & Restore Actions */}
+                    {/* View Invoice, Delete & Restore Actions - Stacked Vertically, NOT Side by Side */}
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
                         <button
                           onClick={() => onViewInvoice(ord)}
                           style={{
-                            padding: '5px 10px',
+                            padding: '4px 10px',
                             borderRadius: '4px',
                             background: 'var(--primary-light)',
                             color: 'var(--primary)',
-                            fontSize: '12px',
+                            fontSize: '11.5px',
                             fontWeight: 600,
-                            display: 'flex',
+                            display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px'
+                            gap: '4px',
+                            border: 'none',
+                            cursor: 'pointer'
                           }}
                           title="View Full Bill & Receipt"
                         >
-                          <Eye size={13} /> View
+                          <Eye size={12} /> View Bill
                         </button>
 
                         {isOrderDeleted ? (
                           <button
                             onClick={() => setOrderToRestore(ord)}
                             style={{
-                              padding: '5px 8px',
+                              padding: '4px 10px',
                               borderRadius: '4px',
                               background: '#e6f4ea',
                               color: '#137333',
-                              fontSize: '12px',
+                              fontSize: '11.5px',
                               fontWeight: 600,
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
+                              border: 'none',
                               cursor: 'pointer'
                             }}
                             title="Restore Order"
                           >
-                            <RotateCcw size={13} /> Restore
+                            <RotateCcw size={12} /> Restore
                           </button>
                         ) : (
                           <>
                             <button
                               onClick={() => setCancelModalOrder(ord)}
                               style={{
-                                padding: '5px 8px',
+                                padding: '4px 8px',
                                 borderRadius: '4px',
-                                background: 'var(--danger-light)',
-                                color: 'var(--danger)',
-                                fontSize: '12px',
+                                background: '#FFFBEB',
+                                color: '#B45309',
+                                border: '1px solid #FDE68A',
+                                fontSize: '11px',
                                 fontWeight: 600,
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}
                               title="Cancel / Void Order"
                             >
-                              <XCircle size={13} />
+                              <XCircle size={12} /> Cancel Order
                             </button>
 
                             <button
                               onClick={() => setOrderToDelete(ord)}
                               style={{
-                                padding: '5px 8px',
+                                padding: '4px 8px',
                                 borderRadius: '4px',
                                 background: 'var(--danger-light)',
                                 color: 'var(--danger)',
-                                fontSize: '12px',
+                                border: 'none',
+                                fontSize: '11px',
                                 fontWeight: 600,
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '4px',
                                 cursor: 'pointer'
                               }}
                               title="Delete Order (Soft Delete)"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={12} /> Delete
                             </button>
                           </>
                         )}

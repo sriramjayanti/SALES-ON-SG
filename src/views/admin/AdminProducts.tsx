@@ -15,7 +15,9 @@ import {
   X,
   AlertTriangle,
   Calendar,
-  Zap
+  Zap,
+  TrendingUp,
+  Shield
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { Product, Category, Employee } from '../../types';
@@ -69,6 +71,7 @@ interface AdminProductsProps {
 
 export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => {
   const db = StorageService.getDb();
+  const isAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
   const [activeSubTab, setActiveSubTab] = useState<'products' | 'categories'>('products');
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('all');
@@ -96,6 +99,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
   const [lowStockThreshold, setLowStockThreshold] = useState<string>('15');
   const [sellPrice, setSellPrice] = useState(40);
   const [mrp, setMrp] = useState(40);
+  const [netAmount, setNetAmount] = useState<string>(''); // Net Cost / Purchase Price (Admin Only)
   const [taxRate, setTaxRate] = useState(0);
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
@@ -150,6 +154,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
     setLowStockThreshold('15');
     setSellPrice(40);
     setMrp(40);
+    setNetAmount('');
     setTaxRate(0);
     setImageUrl('');
     setShowUrlInput(false);
@@ -175,6 +180,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
     setLowStockThreshold(String(p.lowStockThreshold || 15));
     setSellPrice(p.sellPrice);
     setMrp(p.mrp);
+    setNetAmount(p.netAmount !== undefined ? String(p.netAmount) : '');
     setTaxRate(p.taxRate);
     setImageUrl(p.imageUrl || '');
     setShowUrlInput(Boolean(p.imageUrl && !p.imageUrl.startsWith('data:')));
@@ -190,6 +196,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
     }
 
     const finalUnit = selectedUnitType === 'custom' ? (customUnit.trim() || 'Unit') : selectedUnitType;
+    const parsedNet = netAmount.trim() !== '' && !isNaN(Number(netAmount)) ? Number(netAmount) : undefined;
 
     if (editingProduct) {
       StorageService.updateProduct(editingProduct.id, {
@@ -202,6 +209,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
         lowStockThreshold: Number(lowStockThreshold) || 15,
         sellPrice: Number(sellPrice),
         mrp: Number(mrp),
+        netAmount: parsedNet,
         taxRate: Number(taxRate),
         imageUrl,
         active
@@ -217,6 +225,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
         lowStockThreshold: Number(lowStockThreshold) || 15,
         sellPrice: Number(sellPrice),
         mrp: Number(mrp),
+        netAmount: parsedNet,
         taxRate: Number(taxRate),
         imageUrl,
         active
@@ -412,7 +421,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                 <th>Unit / Pack</th>
                 <th>Available Stock</th>
                 <th>Expiry Date</th>
-                <th>Price</th>
+                {isAdmin && <th>Net Cost (Admin)</th>}
+                {isAdmin && <th>Profit / Loss</th>}
+                <th>Sell Price</th>
                 <th>MRP</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Action</th>
@@ -510,6 +521,49 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                         <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>—</span>
                       )}
                     </td>
+
+                    {/* Net Cost (Admin Only) */}
+                    {isAdmin && (
+                      <td style={{ fontWeight: 600, color: '#334155', fontSize: '13.5px' }}>
+                        {p.netAmount !== undefined ? `₹${p.netAmount}` : <span style={{ color: 'var(--text-secondary)' }}>—</span>}
+                      </td>
+                    )}
+
+                    {/* Profit / Loss Analysis (Admin Only) */}
+                    {isAdmin && (
+                      <td>
+                        {p.netAmount !== undefined ? (() => {
+                          const profit = p.sellPrice - p.netAmount;
+                          const margin = p.sellPrice > 0 ? (profit / p.sellPrice) * 100 : 0;
+                          const isLoss = profit < 0;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                fontSize: '11.5px',
+                                fontWeight: 700,
+                                color: isLoss ? '#DC2626' : '#16A34A',
+                                background: isLoss ? '#FEF2F2' : '#F0FDF4',
+                                border: isLoss ? '1px solid #FECACA' : '1px solid #BBF7D0',
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                width: 'fit-content'
+                              }}>
+                                {isLoss ? `-₹${Math.abs(profit)} (${margin.toFixed(0)}%)` : `+₹${profit} (${margin.toFixed(0)}%)`}
+                              </span>
+                              <span style={{ fontSize: '10px', color: isLoss ? '#DC2626' : 'var(--text-secondary)', fontWeight: 600 }}>
+                                {isLoss ? 'Loss Factor' : 'Profit Margin'}
+                              </span>
+                            </div>
+                          );
+                        })() : (
+                          <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>—</span>
+                        )}
+                      </td>
+                    )}
+
                     <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '14.5px' }}>
                       ₹{p.sellPrice}
                     </td>
@@ -520,40 +574,66 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                      {/* Action buttons stacked vertically - NOT side by side */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
                         <button
                           onClick={() => openEditProduct(p)}
-                          style={{ padding: '6px', borderRadius: '4px', background: 'var(--bg-main)', color: 'var(--primary)' }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            background: 'var(--bg-main)',
+                            color: 'var(--primary)',
+                            border: '1px solid var(--border)',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer'
+                          }}
                           title="Edit Product"
                         >
-                          <Edit2 size={15} />
+                          <Edit2 size={12} /> Edit
                         </button>
                         {p.isDeleted || !p.active ? (
                           <button
                             onClick={() => setProductToRestore(p)}
                             style={{
-                              padding: '5px 10px',
+                              padding: '4px 10px',
                               borderRadius: '4px',
                               background: '#e6f4ea',
                               color: '#137333',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
-                              fontSize: '12px',
+                              fontSize: '11.5px',
                               fontWeight: 600,
-                              cursor: 'pointer'
+                              cursor: 'pointer',
+                              border: 'none'
                             }}
                             title="Restore Product"
                           >
-                            <RotateCcw size={13} /> Restore
+                            <RotateCcw size={12} /> Restore
                           </button>
                         ) : (
                           <button
                             onClick={() => setProductToDelete(p)}
-                            style={{ padding: '6px', borderRadius: '4px', background: 'var(--danger-light)', color: 'var(--danger)', cursor: 'pointer' }}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '4px',
+                              background: 'var(--danger-light)',
+                              color: 'var(--danger)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11.5px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: 'none'
+                            }}
                             title="Delete Product (Soft Delete)"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={12} /> Delete
                           </button>
                         )}
                       </div>
@@ -601,34 +681,49 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      {isCatDeleted ? (
-                        <button
-                          onClick={() => setCatToRestore(c)}
-                          style={{
-                            padding: '5px 10px',
-                            borderRadius: '4px',
-                            background: '#e6f4ea',
-                            color: '#137333',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                          title="Restore Category"
-                        >
-                          <RotateCcw size={13} /> Restore
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setCatToDelete(c)}
-                          style={{ padding: '6px', borderRadius: '4px', background: 'var(--danger-light)', color: 'var(--danger)', cursor: 'pointer' }}
-                          title="Delete Category (Soft Delete)"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
+                        {isCatDeleted ? (
+                          <button
+                            onClick={() => setCatToRestore(c)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '4px',
+                              background: '#e6f4ea',
+                              color: '#137333',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11.5px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: 'none'
+                            }}
+                            title="Restore Category"
+                          >
+                            <RotateCcw size={12} /> Restore
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setCatToDelete(c)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '4px',
+                              background: 'var(--danger-light)',
+                              color: 'var(--danger)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11.5px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              border: 'none'
+                            }}
+                            title="Delete Category (Soft Delete)"
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -689,29 +784,137 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ currentUser }) => 
             </div>
           </div>
 
-          <div className="form-grid-2">
-            <div>
-              <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>Sell Price (₹) *</label>
-              <input
-                type="number"
-                required
-                min={0}
-                value={sellPrice}
-                onChange={(e) => setSellPrice(Number(e.target.value))}
-                style={{ width: '100%', marginTop: '4px' }}
-              />
+          {/* Pricing Section with Net Amount (Admin Only) and Profit/Loss Analysis */}
+          <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <DollarSign size={16} color="var(--primary)" /> Pricing & Profit/Loss Structure
+              </div>
+              {isAdmin && (
+                <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <Shield size={11} /> Admin Only View
+                </span>
+              )}
             </div>
 
-            <div>
-              <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>MRP (₹)</label>
-              <input
-                type="number"
-                min={0}
-                value={mrp}
-                onChange={(e) => setMrp(Number(e.target.value))}
-                style={{ width: '100%', marginTop: '4px' }}
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr' : '1fr 1fr', gap: '12px' }}>
+              {isAdmin && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#1E293B' }}>Net Amount (Cost ₹)</label>
+                    <span style={{ fontSize: '9.5px', background: '#FEF3C7', color: '#B45309', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>CONFIDENTIAL</span>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={netAmount}
+                    onChange={(e) => setNetAmount(e.target.value)}
+                    placeholder="e.g. 30"
+                    style={{ width: '100%', marginTop: '4px', fontWeight: 600, borderColor: '#CBD5E1' }}
+                  />
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Purchase / factory cost (hidden from sales staff)
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Sell Price (₹) *</label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  step="any"
+                  value={sellPrice}
+                  onChange={(e) => setSellPrice(Number(e.target.value))}
+                  style={{ width: '100%', marginTop: '4px', fontWeight: 700, color: 'var(--primary)' }}
+                />
+                <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Selling price to retail stores
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>MRP (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={mrp}
+                  onChange={(e) => setMrp(Number(e.target.value))}
+                  style={{ width: '100%', marginTop: '4px' }}
+                />
+                <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Maximum retail price on pack
+                </div>
+              </div>
             </div>
+
+            {/* LIVE PROFIT & LOSS ANALYSIS CARD (ADMIN ONLY) */}
+            {isAdmin && netAmount.trim() !== '' && !isNaN(Number(netAmount)) && (
+              (() => {
+                const cost = Number(netAmount);
+                const selling = Number(sellPrice);
+                const unitProfit = selling - cost;
+                const marginPercent = selling > 0 ? (unitProfit / selling) * 100 : 0;
+                const markupPercent = cost > 0 ? (unitProfit / cost) * 100 : 0;
+                const isLoss = unitProfit < 0;
+
+                return (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      background: isLoss ? '#FEF2F2' : '#F0FDF4',
+                      border: isLoss ? '1.5px solid #FCA5A5' : '1.5px solid #86EFAC',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isLoss ? (
+                          <div style={{ background: '#DC2626', color: '#FFF', borderRadius: '50%', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <AlertTriangle size={15} />
+                          </div>
+                        ) : (
+                          <div style={{ background: '#16A34A', color: '#FFF', borderRadius: '50%', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <TrendingUp size={15} />
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: isLoss ? '#DC2626' : '#15803D' }}>
+                            {isLoss ? 'Loss Factor Alert (Negative Margin)' : 'Profit & Margin Analysis'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: isLoss ? '#991B1B' : '#166534' }}>
+                            {isLoss
+                              ? 'Selling price is lower than purchase cost! Every sale will incur a loss.'
+                              : 'Healthy profit margin based on net purchase amount.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: isLoss ? '#DC2626' : '#15803D' }}>
+                          {isLoss ? `-₹${Math.abs(unitProfit).toFixed(2)}` : `+₹${unitProfit.toFixed(2)}`}
+                          <span style={{ fontSize: '11px', fontWeight: 600, marginLeft: '4px' }}>/ unit</span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', fontWeight: 600, color: isLoss ? '#DC2626' : '#15803D' }}>
+                          {marginPercent.toFixed(1)}% margin ({markupPercent.toFixed(1)}% markup)
+                        </div>
+                      </div>
+                    </div>
+
+                    {isLoss && (
+                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #FCA5A5', fontSize: '11.5px', color: '#7F1D1D' }}>
+                        <strong>Loss Factor:</strong> Net Cost is ₹{cost.toFixed(2)} but Selling Price is ₹{selling.toFixed(2)}. Adjust Selling Price to at least ₹{cost.toFixed(2)} to avoid loss.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            )}
           </div>
 
           {/* Inventory Stock & Expiry Tracking (Required Stock with NO default, Optional Expiry) */}

@@ -416,19 +416,32 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
                 </td>
 
                 <td style={{ textAlign: 'right' }}>
-                  <div style={{ display: 'inline-flex', gap: '6px' }}>
+                  {/* Action buttons stacked vertically - NOT side by side */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', alignItems: 'flex-end' }}>
                     <button
                       onClick={() => openEditShop(shop)}
-                      className="btn-action-icon"
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        background: 'var(--bg-main)',
+                        color: 'var(--primary)',
+                        border: '1px solid var(--border)',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer'
+                      }}
                       title="Edit Shop Details & Photo"
                     >
-                      <Edit2 size={14} />
+                      <Edit2 size={12} /> Edit
                     </button>
                     {isShopDeleted ? (
                       <button
                         onClick={() => setShopToRestore(shop)}
                         style={{
-                          padding: '6px 10px',
+                          padding: '4px 10px',
                           borderRadius: '4px',
                           background: '#e6f4ea',
                           color: '#137333',
@@ -437,20 +450,32 @@ export const AdminShops: React.FC<AdminShopsProps> = ({ currentUser }) => {
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '4px',
-                          fontSize: '12px',
+                          fontSize: '11.5px',
                           fontWeight: 600
                         }}
                         title="Restore Shop"
                       >
-                        <RotateCcw size={13} /> Restore
+                        <RotateCcw size={12} /> Restore
                       </button>
                     ) : (
                       <button
                         onClick={() => setShopToDelete(shop)}
-                        className="btn-action-icon delete"
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          background: 'var(--danger-light)',
+                          color: 'var(--danger)',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '11.5px',
+                          fontWeight: 600
+                        }}
                         title="Delete Shop"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} /> Delete
                       </button>
                     )}
                   </div>

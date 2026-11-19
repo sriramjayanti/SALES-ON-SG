@@ -71,6 +71,7 @@ export interface Product {
   stock: number; // Available quantity in inventory
   expiryDate?: string; // Optional expiry date (YYYY-MM-DD)
   lowStockThreshold?: number; // Optional low stock threshold (defaults to 15)
+  netAmount?: number; // Cost / Net purchase price (visible to admin only for P&L analysis)
   sellPrice: number;
   mrp: number;
   taxRate: number;
