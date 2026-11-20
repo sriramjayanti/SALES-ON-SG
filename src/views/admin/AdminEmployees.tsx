@@ -81,8 +81,8 @@ export const AdminEmployees: React.FC = () => {
     setEmployeeCode(`E00${db.employees.length + 1}`);
     setName('');
     setEmail('');
-    setPhone('+91 ');
-    setPassword(generateRandomPassword());
+    setPhone('');
+    setPassword('');
     setShowPassword(false);
     setRole('sales_employee');
     setStatus('active');
@@ -112,7 +112,9 @@ export const AdminEmployees: React.FC = () => {
     setName(emp.name);
     setEmail(emp.email);
     setPhone(emp.phone);
-    setPassword(emp.password || '');
+    const digits = (emp.phone || '').replace(/\D/g, '');
+    const defaultStaffPass = digits.length >= 5 ? digits.slice(-5) : '';
+    setPassword(emp.password || defaultStaffPass || '');
     setShowPassword(false);
     setRole(emp.role);
     setStatus(emp.status);
@@ -143,13 +145,21 @@ export const AdminEmployees: React.FC = () => {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) return alert('Name and phone are required');
 
+    const cleanPhone = phone.replace(/\D/g, '');
+    let finalPass = password.trim();
+    if (role !== 'super_admin' && role !== 'admin') {
+      if (!finalPass || finalPass === 'id@varshitha123') {
+        finalPass = cleanPhone.length >= 5 ? cleanPhone.slice(-5) : '12345';
+      }
+    }
+
     if (editingEmp) {
       StorageService.updateEmployee(editingEmp.id, {
         employeeCode,
         name,
         email,
         phone,
-        password: password.trim() || editingEmp.password,
+        password: finalPass || editingEmp.password,
         role,
         status,
         assignedRouteIds,
@@ -162,7 +172,7 @@ export const AdminEmployees: React.FC = () => {
         name,
         email,
         phone,
-        password: password.trim() || 'id@varshitha123',
+        password: finalPass || (cleanPhone.length >= 5 ? cleanPhone.slice(-5) : '12345'),
         role,
         status,
         assignedRouteIds,
@@ -485,11 +495,20 @@ export const AdminEmployees: React.FC = () => {
                 type="text"
                 required
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 98765 43210"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPhone(val);
+                  const digits = val.replace(/\D/g, '');
+                  if (role !== 'super_admin' && role !== 'admin' && digits.length >= 5) {
+                    setPassword(digits.slice(-5));
+                  }
+                }}
+                placeholder="e.g. 9876543210"
                 style={{ width: '100%', marginTop: '4px' }}
               />
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Used as the login mobile number / ID.</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                Registered mobile phone for user login.
+              </span>
             </div>
 
             <div>
@@ -514,23 +533,48 @@ export const AdminEmployees: React.FC = () => {
                   Login Password Setup
                 </label>
               </div>
-              <button
-                type="button"
-                onClick={() => setPassword(generateRandomPassword())}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--primary)',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Sparkles size={12} /> Auto-Generate Password
-              </button>
+              {role !== 'super_admin' && role !== 'admin' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const digits = phone.replace(/\D/g, '');
+                    if (digits.length >= 5) {
+                      setPassword(digits.slice(-5));
+                    }
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Sparkles size={12} /> Use Last 5 Digits ({phone.replace(/\D/g, '').slice(-5) || 'XXXXX'})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPassword('id@varshitha123')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Sparkles size={12} /> Set Default Admin Pass
+                </button>
+              )}
             </div>
 
             <div style={{ position: 'relative', marginTop: '4px' }}>
@@ -539,7 +583,7 @@ export const AdminEmployees: React.FC = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter or generate login password"
+                placeholder={role === 'super_admin' || role === 'admin' ? 'Enter strong admin password' : 'Last 5 digits of phone number'}
                 style={{ width: '100%', paddingRight: '40px' }}
               />
               <button
@@ -560,7 +604,9 @@ export const AdminEmployees: React.FC = () => {
               </button>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
-              The employee will log in using their Phone number and this password.
+              {role === 'super_admin' || role === 'admin'
+                ? 'Admin login uses strong password (default: id@varshitha123).'
+                : 'Staff agents log in using their phone number and the last 5 digits of their phone number.'}
             </span>
           </div>
 
@@ -569,7 +615,20 @@ export const AdminEmployees: React.FC = () => {
               <label style={{ fontSize: '12.5px', fontWeight: 600 }}>Role Assignment</label>
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as any)}
+                onChange={(e) => {
+                  const newRole = e.target.value as any;
+                  setRole(newRole);
+                  if (newRole !== 'super_admin' && newRole !== 'admin') {
+                    const digits = phone.replace(/\D/g, '');
+                    if (digits.length >= 5) {
+                      setPassword(digits.slice(-5));
+                    }
+                  } else {
+                    if (!password || password.length === 5) {
+                      setPassword('id@varshitha123');
+                    }
+                  }
+                }}
                 style={{ width: '100%', marginTop: '4px' }}
               >
                 <option value="sales_employee">Sales Executive (Field Rep)</option>

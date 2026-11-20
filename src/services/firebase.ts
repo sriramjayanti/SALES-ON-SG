@@ -12,6 +12,15 @@ import {
   query,
   where
 } from 'firebase/firestore';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  type User as FirebaseUser
+} from 'firebase/auth';
 
 export const firebaseConfig = {
   projectId: "varshithasales",
@@ -29,6 +38,9 @@ export const app = initializeApp(firebaseConfig);
 // Initialize Cloud Firestore Database
 export const firestore = getFirestore(app);
 
+// Initialize Firebase Authentication
+export const auth = getAuth(app);
+
 export {
   collection,
   doc,
@@ -39,6 +51,12 @@ export {
   deleteDoc,
   writeBatch,
   query,
-  where
+  where,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously,
+  firebaseSignOut,
+  onAuthStateChanged,
+  type FirebaseUser
 };
 

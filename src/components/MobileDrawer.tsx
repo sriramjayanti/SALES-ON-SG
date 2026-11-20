@@ -27,7 +27,7 @@ interface MobileDrawerProps {
   onSelectTab: (tab: MobileTab) => void;
   onOpenProducts: () => void;
   onOpenSettings: () => void;
-  onOpenAdminPortal: () => void;
+  onOpenAdminPortal?: () => void;
 }
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({
@@ -41,6 +41,8 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
   onOpenAdminPortal
 }) => {
   if (!isOpen) return null;
+
+  const isAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
 
   return (
     <div
@@ -119,34 +121,36 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </button>
           </div>
 
-          {/* Quick Role Switcher */}
-          <div style={{ background: 'rgba(255,255,255,0.12)', padding: '6px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <UserCheck size={12} /> Switch User:
-            </span>
-            <select
-              value={currentUser.id}
-              onChange={(e) => {
-                StorageService.switchUser(e.target.value);
-                onClose();
-              }}
-              style={{
-                background: '#FFF',
-                color: 'var(--primary)',
-                border: 'none',
-                padding: '2px 6px',
-                fontSize: '11px',
-                fontWeight: 600,
-                borderRadius: '4px'
-              }}
-            >
-              {allUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.role.replace('_', ' ')})
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Quick Role Switcher (Admin Only) */}
+          {isAdmin && (
+            <div style={{ background: 'rgba(255,255,255,0.12)', padding: '6px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <UserCheck size={12} /> Switch User:
+              </span>
+              <select
+                value={currentUser.id}
+                onChange={(e) => {
+                  StorageService.switchUser(e.target.value);
+                  onClose();
+                }}
+                style={{
+                  background: '#FFF',
+                  color: 'var(--primary)',
+                  border: 'none',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  borderRadius: '4px'
+                }}
+              >
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role.replace('_', ' ')})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Navigation Items */}
@@ -248,27 +252,29 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
 
           <div style={{ height: '1px', background: 'var(--border)', margin: '8px 0' }} />
 
-          {/* ADMIN PORTAL ACCESS (Prominent button) */}
-          <button
-            onClick={() => {
-              onOpenAdminPortal();
-              onClose();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 14px',
-              borderRadius: '8px',
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
-              fontWeight: 700,
-              fontSize: '13.5px'
-            }}
-          >
-            <LayoutDashboard size={18} />
-            <span>Admin Management Portal</span>
-          </button>
+          {/* ADMIN PORTAL ACCESS (Admin Only) */}
+          {isAdmin && onOpenAdminPortal && (
+            <button
+              onClick={() => {
+                onOpenAdminPortal();
+                onClose();
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                background: 'var(--primary-light)',
+                color: 'var(--primary)',
+                fontWeight: 700,
+                fontSize: '13.5px'
+              }}
+            >
+              <LayoutDashboard size={18} />
+              <span>Admin Management Portal</span>
+            </button>
+          )}
 
           {/* Sync Data Indicator */}
           <div

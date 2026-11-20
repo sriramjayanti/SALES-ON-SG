@@ -65,11 +65,19 @@ export function App() {
 
   const db = StorageService.getDb();
   const currentUser: Employee = StorageService.getCurrentUser();
+  const isAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
 
   // Primary App View: 'mobile' (Field Sales) or 'admin' (Management Hub)
   const [viewMode, setViewMode] = useState<'mobile' | 'admin'>(() => {
-    return currentUser.role === 'super_admin' ? 'admin' : 'mobile';
+    return isAdmin ? 'admin' : 'mobile';
   });
+
+  // Strict role guard: non-admin employees are strictly locked to field mobile view
+  useEffect(() => {
+    if (!isAdmin && viewMode === 'admin') {
+      setViewMode('mobile');
+    }
+  }, [isAdmin, viewMode]);
 
   if (!isAuthenticated) {
     return <LoginView onLoginSuccess={() => setTick((t) => t + 1)} />;
@@ -166,7 +174,7 @@ export function App() {
             onGoToRoute={() => setMobileTab('route')}
             onGoToShop={handleOpenShop}
             onGoToTab={(t) => setMobileTab(t)}
-            onOpenAdmin={() => setViewMode('admin')}
+            onOpenAdmin={isAdmin ? () => setViewMode('admin') : undefined}
           />
         );
       case 'route':
@@ -184,8 +192,12 @@ export function App() {
             onOpenShop={handleOpenShop}
             onBack={() => setMobileTab('home')}
             onAddNewShop={() => {
-              setViewMode('admin');
-              setAdminTab('shops');
+              if (isAdmin) {
+                setViewMode('admin');
+                setAdminTab('shops');
+              } else {
+                alert('Shop management requires Admin access.');
+              }
             }}
           />
         );
@@ -307,14 +319,20 @@ export function App() {
               allUsers={db.employees}
               onSelectTab={(tab) => setMobileTab(tab)}
               onOpenProducts={() => {
-                setViewMode('admin');
-                setAdminTab('products');
+                if (isAdmin) {
+                  setViewMode('admin');
+                  setAdminTab('products');
+                } else {
+                  setMobileTab('route');
+                }
               }}
               onOpenSettings={() => {
-                setViewMode('admin');
-                setAdminTab('settings');
+                if (isAdmin) {
+                  setViewMode('admin');
+                  setAdminTab('settings');
+                }
               }}
-              onOpenAdminPortal={() => setViewMode('admin')}
+              onOpenAdminPortal={isAdmin ? () => setViewMode('admin') : undefined}
             />
           </div>
 
