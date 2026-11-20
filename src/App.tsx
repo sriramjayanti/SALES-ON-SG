@@ -32,6 +32,30 @@ import { PublicReceiptView } from './views/public/PublicReceiptView';
 export function App() {
   const [, setTick] = useState(0);
 
+  const db = StorageService.getDb();
+  const currentUser: Employee = StorageService.getCurrentUser();
+  const isAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
+  const isAuthenticated = StorageService.isAuthenticated();
+
+  // Primary App View: 'mobile' (Field Sales) or 'admin' (Management Hub)
+  const [viewMode, setViewMode] = useState<'mobile' | 'admin'>(() => {
+    return isAdmin ? 'admin' : 'mobile';
+  });
+
+  const [mobileTab, setMobileTab] = useState<MobileTab>('home');
+  const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
+  const [isAdminSidebarOpen, setIsAdminSidebarOpen] = useState(false);
+
+  // Mobile Drill-down states
+  const [activeShopId, setActiveShopId] = useState<string | null>(null);
+  const [activeCart, setActiveCart] = useState<{ [productId: string]: number }>({});
+  const [isPreviewingBill, setIsPreviewingBill] = useState<boolean>(false);
+  const [successOrder, setSuccessOrder] = useState<Order | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+
+  // Global Invoice Inspection
+  const [inspectingInvoice, setInspectingInvoice] = useState<Order | null>(null);
+
   // Central reactive storage subscription & Cloud Firestore real-time sync
   useEffect(() => {
     StorageService.initFirestore();
@@ -39,6 +63,21 @@ export function App() {
       setTick((t) => t + 1);
     });
   }, []);
+
+  // Strict role guard: non-admin employees are strictly locked to field mobile view
+  useEffect(() => {
+    if (!isAdmin && viewMode === 'admin') {
+      setViewMode('mobile');
+    }
+  }, [isAdmin, viewMode]);
+
+  // Handle seamless login without page reload
+  const handleLoginSuccess = (user?: Employee) => {
+    const loggedUser = user || StorageService.getCurrentUser();
+    const isUserAdmin = loggedUser.role === 'super_admin' || loggedUser.role === 'admin';
+    setViewMode(isUserAdmin ? 'admin' : 'mobile');
+    setTick((t) => t + 1);
+  };
 
   // Check for public digital receipt query parameter (?receipt=... or ?bill=... or ?order=...)
   // This allows retailers and customers clicking WhatsApp receipt links to view their bill immediately without login
@@ -61,41 +100,9 @@ export function App() {
     );
   }
 
-  const isAuthenticated = StorageService.isAuthenticated();
-
-  const db = StorageService.getDb();
-  const currentUser: Employee = StorageService.getCurrentUser();
-  const isAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin';
-
-  // Primary App View: 'mobile' (Field Sales) or 'admin' (Management Hub)
-  const [viewMode, setViewMode] = useState<'mobile' | 'admin'>(() => {
-    return isAdmin ? 'admin' : 'mobile';
-  });
-
-  // Strict role guard: non-admin employees are strictly locked to field mobile view
-  useEffect(() => {
-    if (!isAdmin && viewMode === 'admin') {
-      setViewMode('mobile');
-    }
-  }, [isAdmin, viewMode]);
-
   if (!isAuthenticated) {
-    return <LoginView onLoginSuccess={() => setTick((t) => t + 1)} />;
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
   }
-
-  const [mobileTab, setMobileTab] = useState<MobileTab>('home');
-  const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
-  const [isAdminSidebarOpen, setIsAdminSidebarOpen] = useState(false);
-
-  // Mobile Drill-down states
-  const [activeShopId, setActiveShopId] = useState<string | null>(null);
-  const [activeCart, setActiveCart] = useState<{ [productId: string]: number }>({});
-  const [isPreviewingBill, setIsPreviewingBill] = useState<boolean>(false);
-  const [successOrder, setSuccessOrder] = useState<Order | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
-
-  // Global Invoice Inspection
-  const [inspectingInvoice, setInspectingInvoice] = useState<Order | null>(null);
 
   // Handlers for Mobile Field Flow
   const handleOpenShop = (shopId: string) => {

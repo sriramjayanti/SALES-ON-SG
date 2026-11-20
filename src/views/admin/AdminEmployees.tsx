@@ -146,20 +146,25 @@ export const AdminEmployees: React.FC = () => {
     if (!name.trim() || !phone.trim()) return alert('Name and phone are required');
 
     const cleanPhone = phone.replace(/\D/g, '');
+    const last5 = cleanPhone.length >= 5 ? cleanPhone.slice(-5) : '12345';
     let finalPass = password.trim();
     if (role !== 'super_admin' && role !== 'admin') {
       if (!finalPass || finalPass === 'id@varshitha123') {
-        finalPass = cleanPhone.length >= 5 ? cleanPhone.slice(-5) : '12345';
+        finalPass = last5;
+      }
+    } else {
+      if (!finalPass) {
+        finalPass = 'id@varshitha123';
       }
     }
 
     if (editingEmp) {
       StorageService.updateEmployee(editingEmp.id, {
         employeeCode,
-        name,
-        email,
-        phone,
-        password: finalPass || editingEmp.password,
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password: finalPass,
         role,
         status,
         assignedRouteIds,
@@ -169,10 +174,10 @@ export const AdminEmployees: React.FC = () => {
     } else {
       StorageService.addEmployee({
         employeeCode,
-        name,
-        email,
-        phone,
-        password: finalPass || (cleanPhone.length >= 5 ? cleanPhone.slice(-5) : '12345'),
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password: finalPass,
         role,
         status,
         assignedRouteIds,
@@ -199,7 +204,9 @@ export const AdminEmployees: React.FC = () => {
 
   const openResetPasswordModal = (emp: Employee) => {
     setResetModalEmp(emp);
-    setResetNewPassword(generateRandomPassword());
+    const digits = (emp.phone || '').replace(/\D/g, '');
+    const defaultPass = digits.length >= 5 ? digits.slice(-5) : '12345';
+    setResetNewPassword(emp.password || defaultPass);
     setShowResetPassword(true);
   };
 
@@ -301,11 +308,15 @@ export const AdminEmployees: React.FC = () => {
               <tr key={emp.id} style={{ opacity: isEmpDeleted ? 0.7 : 1 }}>
                 <td>
                   <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span>Code: {emp.employeeCode}</span>
                     <span>•</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                       <Phone size={10} /> {emp.phone}
+                    </span>
+                    <span>•</span>
+                    <span style={{ background: '#F0FDF4', color: '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                      Pass: {emp.password || (emp.phone ? emp.phone.replace(/\D/g, '').slice(-5) : '—')}
                     </span>
                   </div>
                 </td>
@@ -512,13 +523,12 @@ export const AdminEmployees: React.FC = () => {
             </div>
 
             <div>
-              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>Email Address *</label>
+              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>Email Address (Optional)</label>
               <input
                 type="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="employee@varshithasales.com"
+                placeholder="Optional email address"
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>
@@ -815,7 +825,10 @@ export const AdminEmployees: React.FC = () => {
               <label style={{ fontSize: '12.5px', fontWeight: 600 }}>New Password *</label>
               <button
                 type="button"
-                onClick={() => setResetNewPassword(generateRandomPassword())}
+                onClick={() => {
+                  const digits = (resetModalEmp?.phone || '').replace(/\D/g, '');
+                  setResetNewPassword(digits.length >= 5 ? digits.slice(-5) : '12345');
+                }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -828,7 +841,7 @@ export const AdminEmployees: React.FC = () => {
                   gap: '4px'
                 }}
               >
-                <Sparkles size={12} /> Auto-Generate
+                <Sparkles size={12} /> Set to Last 5 Digits
               </button>
             </div>
 

@@ -65,87 +65,6 @@ const INITIAL_DATABASE: AppDatabase = {
         canExportData: true,
         canViewAuditLogs: true
       }
-    },
-    {
-      id: 'emp_ravi',
-      employeeCode: 'EMP01',
-      name: 'Ravi Kumar',
-      email: 'ravi@varshithasales.com',
-      phone: '9876543210',
-      password: '43210',
-      role: 'sales_employee',
-      status: 'active',
-      assignedRouteIds: ['route_a'],
-      joinedAt: '2026-01-10',
-      permissions: {
-        canAddShop: true,
-        canEditShop: false,
-        canAddCategory: false,
-        canAddProduct: false,
-        canChangePrice: false,
-        canCancelOrder: false,
-        canViewTeamOrders: false,
-        canManageRoutes: false,
-        canManageHolidays: false,
-        canManageUsers: false,
-        canViewReports: false,
-        canExportData: false,
-        canViewAuditLogs: false
-      }
-    },
-    {
-      id: 'emp_suresh',
-      employeeCode: 'EMP02',
-      name: 'Suresh Reddy',
-      email: 'suresh@varshithasales.com',
-      phone: '9123456789',
-      password: '56789',
-      role: 'sales_employee',
-      status: 'active',
-      assignedRouteIds: ['route_b'],
-      joinedAt: '2026-01-15',
-      permissions: {
-        canAddShop: true,
-        canEditShop: false,
-        canAddCategory: false,
-        canAddProduct: false,
-        canChangePrice: false,
-        canCancelOrder: false,
-        canViewTeamOrders: false,
-        canManageRoutes: false,
-        canManageHolidays: false,
-        canManageUsers: false,
-        canViewReports: false,
-        canExportData: false,
-        canViewAuditLogs: false
-      }
-    },
-    {
-      id: 'emp_ramesh',
-      employeeCode: 'EMP03',
-      name: 'Ramesh Naidu',
-      email: 'ramesh@varshithasales.com',
-      phone: '8899001122',
-      password: '01122',
-      role: 'sales_employee',
-      status: 'active',
-      assignedRouteIds: ['route_c'],
-      joinedAt: '2026-02-01',
-      permissions: {
-        canAddShop: true,
-        canEditShop: false,
-        canAddCategory: false,
-        canAddProduct: false,
-        canChangePrice: false,
-        canCancelOrder: false,
-        canViewTeamOrders: false,
-        canManageRoutes: false,
-        canManageHolidays: false,
-        canManageUsers: false,
-        canViewReports: false,
-        canExportData: false,
-        canViewAuditLogs: false
-      }
     }
   ],
   categories: [],
@@ -210,128 +129,96 @@ export const StorageService = {
 
   login(
     identifier: string,
-    password: string,
-    mode: 'admin' | 'staff' = 'admin'
-  ): { success: boolean; message?: string; user?: Employee } {
+    password: string
+  ): { success: boolean; message?: string; user?: Employee; targetView?: 'admin' | 'mobile' } {
     const cleanId = identifier.trim();
     const cleanDigits = cleanId.replace(/\D/g, '');
     const cleanPass = password.trim();
     const db = this.getDb();
 
-    // 1. ADMIN LOGIN MODE
-    if (mode === 'admin') {
-      const isAdminIdentifier =
-        cleanDigits === '7799225566' ||
-        cleanId === '7799225566' ||
-        cleanId.toLowerCase() === 'admin@varshithasales.com' ||
-        cleanId.toUpperCase() === 'ADM01';
+    // 1. Direct check for Admin Credentials (7799225566 & id@varshitha123)
+    const isAdminIdentifier =
+      cleanDigits === '7799225566' ||
+      cleanId === '7799225566' ||
+      cleanId.toLowerCase() === 'admin@varshithasales.com' ||
+      cleanId.toUpperCase() === 'ADM01';
 
-      // Check if user is entering a staff phone number into admin login
-      const isStaffNumber = db.employees.some(
-        (e) =>
-          e.role !== 'super_admin' &&
-          e.role !== 'admin' &&
-          ((e.phone && e.phone.replace(/\D/g, '') === cleanDigits) || e.phone === cleanId)
-      );
-
-      if (isStaffNumber) {
+    if (isAdminIdentifier) {
+      if (cleanPass === 'id@varshitha123') {
+        let admin = db.employees.find((e) => e.id === 'emp_admin' || e.role === 'super_admin');
+        if (!admin) {
+          admin = INITIAL_DATABASE.employees[0];
+          db.employees.unshift(admin);
+        }
+        admin.phone = '7799225566';
+        admin.password = 'id@varshitha123';
+        db.currentUserId = admin.id;
+        this.saveDb(db);
+        localStorage.setItem(
+          AUTH_SESSION_KEY,
+          JSON.stringify({ userId: admin.id, role: 'super_admin', loggedInAt: new Date().toISOString() })
+        );
+        FirestoreSync.saveDocument('employees', admin.id, admin);
+        FirebaseAuthService.authenticateWithFirebase('7799225566', cleanPass, 'admin');
+        notify();
+        return { success: true, user: admin, targetView: 'admin' };
+      } else {
         return {
           success: false,
-          message:
-            'Access Denied: This portal is strictly for Admin management. Staff agents must log in through the "Staff Field Sales App" tab using their phone number and last 5 digits as password.'
+          message: 'Incorrect Admin password. Please check your credentials.'
         };
       }
-
-      if (!isAdminIdentifier) {
-        return {
-          success: false,
-          message: 'Admin account not found. Registered Admin Phone is 7799225566.'
-        };
-      }
-
-      if (cleanPass !== 'id@varshitha123') {
-        return {
-          success: false,
-          message: 'Incorrect Admin Password. Please enter the strong admin password.'
-        };
-      }
-
-      let admin = db.employees.find((e) => e.id === 'emp_admin' || e.role === 'super_admin');
-      if (!admin) {
-        admin = INITIAL_DATABASE.employees[0];
-        db.employees.unshift(admin);
-      }
-      admin.phone = '7799225566';
-      admin.password = 'id@varshitha123';
-      db.currentUserId = admin.id;
-      this.saveDb(db);
-      localStorage.setItem(
-        AUTH_SESSION_KEY,
-        JSON.stringify({ userId: admin.id, role: 'admin', loggedInAt: new Date().toISOString() })
-      );
-      FirestoreSync.saveDocument('employees', admin.id, admin);
-      FirebaseAuthService.authenticateWithFirebase('7799225566', cleanPass, 'admin');
-      notify();
-      return { success: true, user: admin };
     }
 
-    // 2. STAFF FIELD SALES APP LOGIN MODE
-    // If admin is logging into field app directly:
-    if (
-      (cleanDigits === '7799225566' || cleanId === '7799225566' || cleanId.toLowerCase() === 'admin@varshithasales.com') &&
-      cleanPass === 'id@varshitha123'
-    ) {
-      let admin = db.employees.find((e) => e.id === 'emp_admin' || e.role === 'super_admin') || INITIAL_DATABASE.employees[0];
-      db.currentUserId = admin.id;
-      this.saveDb(db);
-      localStorage.setItem(
-        AUTH_SESSION_KEY,
-        JSON.stringify({ userId: admin.id, role: 'admin', loggedInAt: new Date().toISOString() })
-      );
-      FirebaseAuthService.authenticateWithFirebase('7799225566', cleanPass, 'admin');
-      notify();
-      return { success: true, user: admin };
-    }
-
-    // Match staff employee by registered phone number or employee code
-    const staff = db.employees.find((e) => {
+    // 2. Check All Staff Accounts (created by Admin)
+    const matched = db.employees.find((e) => {
       const empDigits = (e.phone || '').replace(/\D/g, '');
       return (
-        (cleanDigits && empDigits === cleanDigits) ||
+        (cleanDigits && (empDigits === cleanDigits || empDigits.endsWith(cleanDigits) || cleanDigits.endsWith(empDigits))) ||
         e.phone === cleanId ||
-        e.employeeCode?.toLowerCase() === cleanId.toLowerCase() ||
-        e.email?.toLowerCase() === cleanId.toLowerCase()
+        (e.employeeCode && e.employeeCode.toLowerCase() === cleanId.toLowerCase()) ||
+        (e.email && e.email.toLowerCase() === cleanId.toLowerCase())
       );
     });
 
-    if (!staff) {
-      return {
-        success: false,
-        message: `Phone number "${cleanId}" is not registered in the staff roster. Please check with your Admin.`
-      };
+    if (matched) {
+      const empDigits = (matched.phone || '').replace(/\D/g, '');
+      const last5 = empDigits.slice(-5);
+
+      // Staff authentication succeeds if:
+      // a) Password matches the custom password set/changed by Admin, OR
+      // b) Password matches the last 5 digits of their phone number
+      const isPasswordMatch =
+        cleanPass === matched.password ||
+        (last5 && cleanPass === last5);
+
+      if (isPasswordMatch) {
+        db.currentUserId = matched.id;
+        this.saveDb(db);
+        const isUserAdmin = matched.role === 'super_admin' || matched.role === 'admin';
+        localStorage.setItem(
+          AUTH_SESSION_KEY,
+          JSON.stringify({ userId: matched.id, role: matched.role, loggedInAt: new Date().toISOString() })
+        );
+        FirebaseAuthService.authenticateWithFirebase(matched.phone, cleanPass, isUserAdmin ? 'admin' : 'staff');
+        notify();
+        return {
+          success: true,
+          user: matched,
+          targetView: isUserAdmin ? 'admin' : 'mobile'
+        };
+      } else {
+        return {
+          success: false,
+          message: `Incorrect password! For staff login, please enter the last 5 digits of your phone number (${last5 || 'XXXXX'}) or the password assigned by your Admin.`
+        };
+      }
     }
 
-    // For staff, password is the last 5 digits of their phone number
-    const phoneDigits = (staff.phone || '').replace(/\D/g, '');
-    const expectedPass = phoneDigits.length >= 5 ? phoneDigits.slice(-5) : staff.password;
-
-    if (cleanPass !== expectedPass && cleanPass !== staff.password) {
-      return {
-        success: false,
-        message: `Incorrect password! For staff agents, your password is the last 5 digits of your registered phone number (${phoneDigits.length >= 5 ? phoneDigits.slice(-5) : 'XXXXX'}).`
-      };
-    }
-
-    // Successful Staff Login
-    db.currentUserId = staff.id;
-    this.saveDb(db);
-    localStorage.setItem(
-      AUTH_SESSION_KEY,
-      JSON.stringify({ userId: staff.id, role: staff.role, loggedInAt: new Date().toISOString() })
-    );
-    FirebaseAuthService.authenticateWithFirebase(staff.phone, cleanPass, 'staff');
-    notify();
-    return { success: true, user: staff };
+    return {
+      success: false,
+      message: 'Invalid Phone Number / Login ID or Password. Please verify your details.'
+    };
   },
 
   logout() {
@@ -352,29 +239,26 @@ export const StorageService = {
       }
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.employees)) {
+        // Remove pre-seeded sample staff members if they exist
+        parsed.employees = parsed.employees.filter(
+          (e: any) => e.id !== 'emp_ravi' && e.id !== 'emp_suresh' && e.id !== 'emp_ramesh'
+        );
+
         const admin = parsed.employees.find((e: any) => e.id === 'emp_admin' || e.role === 'super_admin');
         if (admin) {
           admin.phone = '7799225566';
           admin.password = 'id@varshitha123';
         }
-        // Ensure all staff have password equal to last 5 digits of their phone
+
+        // For staff with phone, ensure password exists (default to last 5 digits)
         parsed.employees.forEach((emp: any) => {
-          if (emp.role !== 'super_admin' && emp.role !== 'admin' && emp.phone) {
+          if (emp.role !== 'super_admin' && emp.role !== 'admin' && !emp.password && emp.phone) {
             const digits = emp.phone.replace(/\D/g, '');
             if (digits.length >= 5) {
               emp.password = digits.slice(-5);
             }
           }
         });
-        // Seed initial staff if none exist
-        if (parsed.employees.length <= 1) {
-          const defaultStaff = INITIAL_DATABASE.employees.slice(1);
-          defaultStaff.forEach((st) => {
-            if (!parsed.employees.some((e: any) => e.id === st.id || (e.phone && e.phone.replace(/\D/g, '') === st.phone.replace(/\D/g, '')))) {
-              parsed.employees.push(st);
-            }
-          });
-        }
       }
       if (parsed && Array.isArray(parsed.orders)) {
         parsed.orders.forEach((o: any) => {
