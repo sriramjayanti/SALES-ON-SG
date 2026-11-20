@@ -50,15 +50,40 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     year: 'numeric'
   });
 
-  // Route Selection
-  const assignedRouteId = currentUser.assignedRouteIds[0] || db.routes[0]?.id || 'route_a';
-  const [activeRouteId, setActiveRouteId] = useState<string>(() => {
-    return localStorage.getItem('selected_route_id') || assignedRouteId;
+  // Route Selection: Staff only sees assigned routes; Admin sees all active routes
+  const isStaff = currentUser.role !== 'super_admin' && currentUser.role !== 'admin';
+  const availableRoutes = db.routes.filter((r) => {
+    if (r.isDeleted || r.active === false) return false;
+    if (!isStaff) return true;
+    return (
+      (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(r.id)) ||
+      (Array.isArray(r.assignedEmployeeIds) && r.assignedEmployeeIds.includes(currentUser.id)) ||
+      r.assignedEmployeeId === currentUser.id
+    );
   });
+
+  // Daily Route Auto-Rotation: match route according to the day of week (0=Sun, 1=Mon, ..., 6=Sat)
+  const selectedDayOfWeek = new Date(selectedDate).getDay();
+  const scheduledRouteForDay = availableRoutes.find(
+    (r) => Array.isArray(r.defaultWeekdays) && r.defaultWeekdays.includes(selectedDayOfWeek)
+  );
+  const defaultRouteId = scheduledRouteForDay?.id || availableRoutes[0]?.id || '';
+
+  const [activeRouteId, setActiveRouteId] = useState<string>(() => {
+    return scheduledRouteForDay?.id || localStorage.getItem('selected_route_id') || defaultRouteId;
+  });
+
+  // Automatically switch route to according day when date changes
+  useEffect(() => {
+    if (scheduledRouteForDay) {
+      setActiveRouteId(scheduledRouteForDay.id);
+    }
+  }, [selectedDate]);
+
   const currentRoute: Route | undefined =
-    db.routes.find((r) => r.id === activeRouteId && !r.isDeleted && r.active !== false) ||
-    db.routes.find((r) => !r.isDeleted && r.active !== false) ||
-    db.routes[0];
+    availableRoutes.find((r) => r.id === activeRouteId) ||
+    scheduledRouteForDay ||
+    availableRoutes[0];
 
   // Holiday check
   const holiday = db.holidays.find((h) => h.dateString === selectedDate && !h.isDeleted && h.active !== false);
@@ -146,6 +171,38 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     setNewRouteArea('');
     setSelectedShopIdsForNewRoute([]);
     alert(`New Route "${created.name}" created and assigned!`);
+  };
+
+  const handleCollectShopPayment = (shop: Shop, totalDue: number) => {
+    const input = window.prompt(
+      `Collect payment for "${shop.name}"\nTotal Balance Pending: ₹${totalDue}\n\nEnter amount paid by shop:`,
+      totalDue.toString()
+    );
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+    let remaining = Math.min(amt, totalDue);
+    const unpaidOrders = db.orders
+      .filter((o) => o.shopId === shop.id && o.status === 'completed' && o.paymentStatus !== 'paid' && !o.isDeleted)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    for (const ord of unpaidOrders) {
+      if (remaining <= 0) break;
+      const ordDue = ord.grandTotal - (ord.amountPaid || 0);
+      const payPortion = Math.min(remaining, ordDue);
+      const isOrdPaid = payPortion >= ordDue;
+      StorageService.recordPayment(ord.id, isOrdPaid ? 'paid' : 'partial', payPortion, 'cash');
+      remaining -= payPortion;
+    }
+    const newDue = Math.max(0, totalDue - amt);
+    if (newDue > 0) {
+      alert(`₹${amt} collected for ${shop.name}!\nRemaining Balance Pending: ₹${newDue} (will show pending until paid).`);
+    } else {
+      alert(`Full payment of ₹${amt} collected for ${shop.name}! All pending dues cleared.`);
+    }
   };
 
   return (
@@ -242,14 +299,19 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                   background: 'var(--bg-main)',
                   border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-sm)',
-                  padding: '4px 8px'
+                  padding: '4px 8px',
+                  maxWidth: '220px'
                 }}
               >
-                {db.routes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} ({r.code})
-                  </option>
-                ))}
+                {availableRoutes.length === 0 ? (
+                  <option value="">No Assigned Routes</option>
+                ) : (
+                  availableRoutes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.code}){r.id === scheduledRouteForDay?.id ? " ⭐ (Scheduled Route)" : ''}
+                    </option>
+                  ))
+                )}
               </select>
 
               <span className="status-chip active">Assigned</span>
@@ -536,7 +598,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                     </div>
 
                     {shopPendingDue > 0 && (
-                      <div style={{ marginTop: '5px' }}>
+                      <div style={{ marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <span
                           style={{
                             fontSize: '11px',
@@ -551,8 +613,31 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                             gap: '4px'
                           }}
                         >
-                          <CreditCard size={11} /> Due: ₹{shopPendingDue.toLocaleString()}
+                          <CreditCard size={11} /> Balance Pending: ₹{shopPendingDue.toLocaleString()}
                         </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCollectShopPayment(shop, shopPendingDue);
+                          }}
+                          style={{
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            background: '#059669',
+                            color: '#FFF',
+                            border: 'none',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}
+                          title="Collect Full or Partial Payment"
+                        >
+                          Collect ₹
+                        </button>
                       </div>
                     )}
                   </div>

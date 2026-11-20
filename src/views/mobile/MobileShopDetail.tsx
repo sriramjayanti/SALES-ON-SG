@@ -167,16 +167,58 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
 
   // Delivery & Payment Handlers
   const handleConfirmDelivery = (orderId: string) => {
-    const isPaid = window.confirm('Did you collect payment (Full Amount) upon delivery? Click OK for Paid, or Cancel for Credit / Pending Payment.');
-    StorageService.confirmDelivery(orderId, {
-      paymentStatus: isPaid ? 'paid' : 'unpaid',
-      paymentMethod: isPaid ? 'cash' : 'credit',
-      notes: 'Delivered at store by sales rep'
-    });
+    const order = db.orders.find((o) => o.id === orderId);
+    const dueAmt = order ? order.grandTotal - (order.amountPaid || 0) : 0;
+    const input = window.prompt(
+      `Confirm Delivery for ${order?.orderNo || 'order'}:\nEnter payment collected upon delivery (Full: ₹${dueAmt}, or enter partial amount, or 0 for Credit/Unpaid):`,
+      dueAmt.toString()
+    );
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (isNaN(amt) || amt <= 0) {
+      StorageService.confirmDelivery(orderId, {
+        paymentStatus: 'unpaid',
+        paymentMethod: 'credit',
+        notes: 'Delivered at store by sales rep (Credit / Pending Payment)'
+      });
+      alert('Delivery confirmed as Unpaid / Credit. Balance remains pending.');
+    } else {
+      const payAmt = Math.min(amt, dueAmt);
+      const isFull = payAmt >= dueAmt;
+      StorageService.confirmDelivery(orderId, {
+        paymentStatus: isFull ? 'paid' : 'partial',
+        paymentMethod: 'cash',
+        notes: `Delivered at store. Collected ₹${payAmt}`
+      });
+      if (!isFull) {
+        StorageService.recordPayment(orderId, 'partial', payAmt, 'cash');
+        alert(`Delivery confirmed! Partial payment of ₹${payAmt} collected. Remaining balance pending: ₹${dueAmt - payAmt}`);
+      } else {
+        alert(`Delivery confirmed! Full payment of ₹${dueAmt} collected.`);
+      }
+    }
   };
 
-  const handleCollectPayment = (orderId: string, grandTotal: number) => {
-    StorageService.recordPayment(orderId, 'paid', grandTotal, 'cash');
+  const handleCollectPayment = (orderId: string, pendingAmt: number) => {
+    const input = window.prompt(
+      `Enter collection amount (Pending Balance Due: ₹${pendingAmt}):`,
+      pendingAmt.toString()
+    );
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+    const payAmt = Math.min(amt, pendingAmt);
+    const isFull = payAmt >= pendingAmt;
+    StorageService.recordPayment(orderId, isFull ? 'paid' : 'partial', payAmt, 'cash');
+    const remaining = pendingAmt - payAmt;
+    if (remaining > 0) {
+      alert(`₹${payAmt} collected successfully.\nRemaining Balance Pending: ₹${remaining} (will remain pending until fully paid).`);
+    } else {
+      alert(`Full payment of ₹${payAmt} collected! Bill is now fully settled.`);
+    }
   };
 
   // Handle No Order
@@ -771,9 +813,13 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                         {isDelivered ? 'Delivered' : 'Pending Delivery'}
                       </span>
 
-                      <span className={`status-chip ${isPaid ? 'paid' : 'unpaid'}`} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className={`status-chip ${isPaid ? 'paid' : ord.paymentStatus === 'partial' ? 'partial' : 'unpaid'}`} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <CreditCard size={12} />
-                        {isPaid ? 'Payment Paid' : `Unpaid (Due: ₹${pendingAmt.toLocaleString()})`}
+                        {isPaid
+                          ? 'Payment Paid'
+                          : ord.paymentStatus === 'partial'
+                          ? `Partial Paid (Paid: ₹${(ord.amountPaid || 0).toLocaleString()} • Due: ₹${pendingAmt.toLocaleString()})`
+                          : `Unpaid (Due: ₹${pendingAmt.toLocaleString()})`}
                       </span>
                     </div>
 
@@ -808,7 +854,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                             cursor: 'pointer'
                           }}
                         >
-                          <CreditCard size={14} /> Collect ₹{pendingAmt}
+                          <CreditCard size={14} /> Collect Due (₹{pendingAmt})
                         </button>
                       )}
                     </div>

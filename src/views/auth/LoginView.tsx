@@ -29,16 +29,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const res = StorageService.login(cleanId, cleanPass);
-      setIsLoading(false);
+    const res = StorageService.login(cleanId, cleanPass);
+    setIsLoading(false);
 
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
-      } else {
-        setError(res.message || 'Invalid credentials. Please verify your phone number and password.');
-      }
-    }, 250);
+    if (res.success && res.user) {
+      onLoginSuccess(res.user);
+    } else {
+      setError(res.message || 'Invalid credentials. Please verify your phone number and password.');
+    }
   };
 
   return (

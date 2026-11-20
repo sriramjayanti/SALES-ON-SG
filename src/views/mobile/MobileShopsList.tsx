@@ -20,8 +20,23 @@ export const MobileShopsList: React.FC<MobileShopsListProps> = ({
   const [search, setSearch] = useState('');
   const [selectedRoute, setSelectedRoute] = useState('all');
 
+  const isStaff = currentUser.role !== 'super_admin' && currentUser.role !== 'admin';
+  const availableRoutes = db.routes.filter((r) => {
+    if (r.isDeleted || r.active === false) return false;
+    if (!isStaff) return true;
+    return (
+      (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(r.id)) ||
+      (Array.isArray(r.assignedEmployeeIds) && r.assignedEmployeeIds.includes(currentUser.id)) ||
+      r.assignedEmployeeId === currentUser.id
+    );
+  });
+  const availableRouteIds = availableRoutes.map((r) => r.id);
+
   const filteredShops = db.shops.filter((s) => {
     if (s.isDeleted || s.status === 'inactive' || s.active === false) return false;
+    if (isStaff && !availableRouteIds.includes(s.routeId) && s.assignedEmployeeId !== currentUser.id) {
+      return false;
+    }
     const matchesRoute = selectedRoute === 'all' || s.routeId === selectedRoute;
     const matchesSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -92,7 +107,7 @@ export const MobileShopsList: React.FC<MobileShopsListProps> = ({
           >
             All Routes
           </button>
-          {db.routes.map((r) => (
+          {availableRoutes.map((r) => (
             <button
               key={r.id}
               onClick={() => setSelectedRoute(r.id)}
@@ -114,68 +129,84 @@ export const MobileShopsList: React.FC<MobileShopsListProps> = ({
 
         {/* Shops List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filteredShops.map((shop) => (
-            <div
-              key={shop.id}
-              onClick={() => onOpenShop(shop.id)}
-              style={{
-                background: '#FFF',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {shop.imageUrl ? (
-                  <img
-                    src={shop.imageUrl}
-                    alt={shop.name}
-                    style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: 'var(--radius-md)',
-                      objectFit: 'cover',
-                      border: '1px solid var(--border)'
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--primary-light)',
-                      color: 'var(--primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 700
-                    }}
-                  >
-                    <Store size={20} />
-                  </div>
-                )}
-                <div>
-                  <h4 style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {shop.name}
-                  </h4>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    {shop.ownerName} • {shop.phone}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {shop.address}
+          {filteredShops.map((shop) => {
+            const shopUnpaid = db.orders.filter(
+              (o) => o.shopId === shop.id && o.status === 'completed' && o.paymentStatus !== 'paid' && !o.isDeleted
+            );
+            const pendingDue = shopUnpaid.reduce((sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)), 0);
+
+            return (
+              <div
+                key={shop.id}
+                onClick={() => onOpenShop(shop.id)}
+                style={{
+                  background: '#FFF',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                  {shop.imageUrl ? (
+                    <img
+                      src={shop.imageUrl}
+                      alt={shop.name}
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: 'var(--radius-md)',
+                        objectFit: 'cover',
+                        border: '1px solid var(--border)',
+                        flexShrink: 0
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--primary-light)',
+                        color: 'var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        flexShrink: 0
+                      }}
+                    >
+                      <Store size={20} />
+                    </div>
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <h4 style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {shop.name}
+                    </h4>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {shop.ownerName} • {shop.phone}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {shop.address}
+                    </div>
+                    {pendingDue > 0 && (
+                      <div style={{ marginTop: '4px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', background: '#FEF2F2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #FECACA' }}>
+                          Due: ₹{pendingDue.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              <ChevronRight size={18} color="var(--text-secondary)" />
-            </div>
-          ))}
+                <ChevronRight size={18} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

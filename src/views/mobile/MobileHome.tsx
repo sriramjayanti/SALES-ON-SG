@@ -43,10 +43,28 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
     year: 'numeric'
   });
 
-  // Resolve selected route (defaults to saved or assigned route)
-  const defaultRouteId = currentUser.assignedRouteIds[0] || db.routes[0]?.id || 'route_a';
+  // Filter routes: Staff only sees their assigned routes; Admin sees all active routes
+  const isStaff = currentUser.role !== 'super_admin' && currentUser.role !== 'admin';
+  const availableRoutes = db.routes.filter((r) => {
+    if (r.isDeleted || r.active === false) return false;
+    if (!isStaff) return true;
+    return (
+      (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(r.id)) ||
+      (Array.isArray(r.assignedEmployeeIds) && r.assignedEmployeeIds.includes(currentUser.id)) ||
+      r.assignedEmployeeId === currentUser.id
+    );
+  });
+
+  // Daily Route Auto-Rotation: every day automatically change route according to current day of the week
+  const todayDayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const todayScheduledRoute = availableRoutes.find(
+    (r) => Array.isArray(r.defaultWeekdays) && r.defaultWeekdays.includes(todayDayOfWeek)
+  );
+  const defaultRouteId = todayScheduledRoute?.id || availableRoutes[0]?.id || '';
+
   const [selectedRouteId, setSelectedRouteId] = useState<string>(() => {
-    return localStorage.getItem('selected_route_id') || defaultRouteId;
+    // Automatically select today's scheduled route according to the day!
+    return todayScheduledRoute?.id || localStorage.getItem('selected_route_id') || defaultRouteId;
   });
 
   const handleRouteChange = (newRouteId: string) => {
@@ -55,9 +73,9 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   };
 
   const currentRoute: Route | undefined =
-    db.routes.find((r) => r.id === selectedRouteId && !r.isDeleted && r.active !== false) ||
-    db.routes.find((r) => !r.isDeleted && r.active !== false) ||
-    db.routes[0];
+    availableRoutes.find((r) => r.id === selectedRouteId) ||
+    todayScheduledRoute ||
+    availableRoutes[0];
 
   // Check holiday
   const todayHoliday = db.holidays.find((h) => h.dateString === todayStr && !h.isDeleted && h.active !== false);
@@ -117,18 +135,58 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   const totalUnpaidDue = unpaidOrders.reduce((sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)), 0);
 
   const handleConfirmDelivery = (orderId: string) => {
-    const isPaid = window.confirm(
-      'Did you collect payment upon delivery? Click OK for Paid, or Cancel for Credit / Pending Payment.'
+    const order = db.orders.find((o) => o.id === orderId);
+    const dueAmt = order ? order.grandTotal - (order.amountPaid || 0) : 0;
+    const input = window.prompt(
+      `Delivery confirmation:\nEnter payment collected now (Full Due: ₹${dueAmt}, or enter partial amount, or 0 for Credit/Unpaid):`,
+      dueAmt.toString()
     );
-    StorageService.confirmDelivery(orderId, {
-      paymentStatus: isPaid ? 'paid' : 'unpaid',
-      paymentMethod: isPaid ? 'cash' : 'credit',
-      notes: 'Delivered at store by sales rep'
-    });
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (isNaN(amt) || amt <= 0) {
+      StorageService.confirmDelivery(orderId, {
+        paymentStatus: 'unpaid',
+        paymentMethod: 'credit',
+        notes: 'Delivered at store (Credit / Pending Payment)'
+      });
+      alert('Delivery recorded as Unpaid/Credit.');
+    } else {
+      const payAmt = Math.min(amt, dueAmt);
+      const isFull = payAmt >= dueAmt;
+      StorageService.confirmDelivery(orderId, {
+        paymentStatus: isFull ? 'paid' : 'partial',
+        paymentMethod: 'cash',
+        notes: `Delivered at store. Collected ₹${payAmt}`
+      });
+      if (!isFull) {
+        StorageService.recordPayment(orderId, 'partial', payAmt, 'cash');
+        alert(`Delivered! Partial payment of ₹${payAmt} recorded. Remaining pending balance: ₹${dueAmt - payAmt}`);
+      } else {
+        alert(`Delivered! Full payment of ₹${dueAmt} collected.`);
+      }
+    }
   };
 
   const handleCollectPayment = (orderId: string, amount: number) => {
-    StorageService.recordPayment(orderId, 'paid', amount, 'cash');
+    const input = window.prompt(
+      `Enter collection amount (Pending Due: ₹${amount}):`,
+      amount.toString()
+    );
+    if (input === null) return;
+    const amt = parseFloat(input);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+    const payAmt = Math.min(amt, amount);
+    const isFull = payAmt >= amount;
+    StorageService.recordPayment(orderId, isFull ? 'paid' : 'partial', payAmt, 'cash');
+    const remaining = amount - payAmt;
+    if (remaining > 0) {
+      alert(`₹${payAmt} collected. Balance remaining pending: ₹${remaining} (will remain pending on this route until paid).`);
+    } else {
+      alert(`Full payment of ₹${payAmt} collected! Bill is settled.`);
+    }
   };
 
   const percentage = assignedShops.length > 0
@@ -268,14 +326,19 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
               border: '1px solid rgba(23, 63, 53, 0.15)',
               color: 'var(--primary)',
               cursor: 'pointer',
-              outline: 'none'
+              outline: 'none',
+              maxWidth: '220px'
             }}
           >
-            {db.routes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.code})
-              </option>
-            ))}
+            {availableRoutes.length === 0 ? (
+              <option value="">No Assigned Routes</option>
+            ) : (
+              availableRoutes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({r.code}){r.id === todayScheduledRoute?.id ? " ⭐ (Today's Route)" : ''}
+                </option>
+              ))
+            )}
           </select>
         </div>
         {/* Holiday Banner if active */}

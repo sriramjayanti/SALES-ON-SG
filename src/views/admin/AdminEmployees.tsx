@@ -35,11 +35,6 @@ export const AdminEmployees: React.FC = () => {
   const [empToDelete, setEmpToDelete] = useState<Employee | null>(null);
   const [empToRestore, setEmpToRestore] = useState<Employee | null>(null);
 
-  // Password Reset Modal State
-  const [resetModalEmp, setResetModalEmp] = useState<Employee | null>(null);
-  const [resetNewPassword, setResetNewPassword] = useState('');
-  const [showResetPassword, setShowResetPassword] = useState(false);
-
   // Form Fields
   const [employeeCode, setEmployeeCode] = useState('');
   const [name, setName] = useState('');
@@ -202,26 +197,6 @@ export const AdminEmployees: React.FC = () => {
     }
   };
 
-  const openResetPasswordModal = (emp: Employee) => {
-    setResetModalEmp(emp);
-    const digits = (emp.phone || '').replace(/\D/g, '');
-    const defaultPass = digits.length >= 5 ? digits.slice(-5) : '12345';
-    setResetNewPassword(emp.password || defaultPass);
-    setShowResetPassword(true);
-  };
-
-  const handleSavePasswordReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resetModalEmp) return;
-    if (!resetNewPassword.trim()) return alert('Password cannot be empty');
-
-    const success = StorageService.resetEmployeePassword(resetModalEmp.id, resetNewPassword.trim());
-    if (success) {
-      alert(`Password successfully updated for ${resetModalEmp.name}!\n\nNew Login Credentials:\nPhone/ID: ${resetModalEmp.phone}\nPassword: ${resetNewPassword}`);
-      setResetModalEmp(null);
-    }
-  };
-
   const filteredEmployees = db.employees.filter((e) => {
     const matchesRole = roleFilter === 'all' || e.role === roleFilter;
     const matchesSearch =
@@ -362,28 +337,6 @@ export const AdminEmployees: React.FC = () => {
                 <td style={{ textAlign: 'right', verticalAlign: 'middle', padding: '14px 10px' }}>
                   {/* Action buttons with generous safety space between actions */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => openResetPasswordModal(emp)}
-                      style={{
-                        minWidth: '92px',
-                        padding: '5px 12px',
-                        borderRadius: '6px',
-                        background: '#EEF2FF',
-                        color: '#4F46E5',
-                        border: '1px solid #C7D2FE',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        fontSize: '11.5px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                      title="Reset Employee Password"
-                    >
-                      <Key size={12} /> Reset Pass
-                    </button>
-
                     <button
                       onClick={() => openEditEmployee(emp)}
                       style={{
@@ -797,78 +750,6 @@ export const AdminEmployees: React.FC = () => {
                 />
                 <span>canViewReports</span>
               </label>
-            </div>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Password Reset Modal */}
-      <Modal
-        isOpen={Boolean(resetModalEmp)}
-        onClose={() => setResetModalEmp(null)}
-        title={`Reset Password: ${resetModalEmp?.name}`}
-        maxWidth="460px"
-        footer={
-          <>
-            <button className="btn-secondary" onClick={() => setResetModalEmp(null)}>Cancel</button>
-            <button className="btn-primary" onClick={handleSavePasswordReset}>Update Password</button>
-          </>
-        }
-      >
-        <form onSubmit={handleSavePasswordReset} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              Reset login credentials for <strong>{resetModalEmp?.name}</strong> (Login ID: <code>{resetModalEmp?.phone}</code>).
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>New Password *</label>
-              <button
-                type="button"
-                onClick={() => {
-                  const digits = (resetModalEmp?.phone || '').replace(/\D/g, '');
-                  setResetNewPassword(digits.length >= 5 ? digits.slice(-5) : '12345');
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--primary)',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Sparkles size={12} /> Set to Last 5 Digits
-              </button>
-            </div>
-
-            <div style={{ position: 'relative' }}>
-              <input
-                type={showResetPassword ? 'text' : 'password'}
-                required
-                value={resetNewPassword}
-                onChange={(e) => setResetNewPassword(e.target.value)}
-                style={{ width: '100%', paddingRight: '40px' }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowResetPassword(!showResetPassword)}
-                style={{
-                  position: 'absolute',
-                  right: '10px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer'
-                }}
-              >
-                {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
             </div>
           </div>
         </form>

@@ -165,13 +165,16 @@ export const StorageService = {
       } else {
         return {
           success: false,
-          message: 'Incorrect Admin password. Please check your credentials.'
+          message: 'Incorrect Admin password. Admin login strictly requires the strong password (id@varshitha123). Last digits are not accepted for Admin.'
         };
       }
     }
 
-    // 2. Check All Staff Accounts (created by Admin)
+    // 2. Check All Staff Accounts (created by Admin - strictly exclude Admin)
     const matched = db.employees.find((e) => {
+      if (e.id === 'emp_admin' || e.role === 'super_admin' || (e.phone && e.phone.replace(/\D/g, '') === '7799225566')) {
+        return false;
+      }
       const empDigits = (e.phone || '').replace(/\D/g, '');
       return (
         (cleanDigits && (empDigits === cleanDigits || empDigits.endsWith(cleanDigits) || cleanDigits.endsWith(empDigits))) ||
