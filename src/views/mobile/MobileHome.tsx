@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Menu,
   Bell,
@@ -64,9 +64,18 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   const defaultRouteId = todayScheduledRoute?.id || availableRoutes[0]?.id || '';
 
   const [selectedRouteId, setSelectedRouteId] = useState<string>(() => {
-    // Automatically select today's scheduled route according to the day!
-    return todayScheduledRoute?.id || localStorage.getItem('selected_route_id') || defaultRouteId;
+    return todayScheduledRoute?.id || defaultRouteId;
   });
+
+  // Automatically update selected route when day/database schedules change
+  useEffect(() => {
+    if (todayScheduledRoute) {
+      setSelectedRouteId(todayScheduledRoute.id);
+    } else if (availableRoutes.length > 0) {
+      const fallbackRoute = availableRoutes[todayDayOfWeek % availableRoutes.length];
+      if (fallbackRoute) setSelectedRouteId(fallbackRoute.id);
+    }
+  }, [todayDayOfWeek, availableRoutes.length]);
 
   const handleRouteChange = (newRouteId: string) => {
     setSelectedRouteId(newRouteId);
@@ -74,8 +83,9 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   };
 
   const currentRoute: Route | undefined =
-    availableRoutes.find((r) => r.id === selectedRouteId) ||
     todayScheduledRoute ||
+    availableRoutes.find((r) => r.id === selectedRouteId) ||
+    availableRoutes[todayDayOfWeek % (availableRoutes.length || 1)] ||
     availableRoutes[0];
 
   // Check holiday
@@ -86,17 +96,20 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
 
   // Calculate metrics (Staff assigned specific shops across different routes)
   const userHasCustomShops = isStaff && Array.isArray(currentUser.assignedShopIds) && currentUser.assignedShopIds.length > 0;
-  const isWholeRouteAssigned = (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(currentRoute?.id || '')) ||
-    currentRoute?.assignedEmployeeId === currentUser.id ||
-    (Array.isArray(currentRoute?.assignedEmployeeIds) && currentRoute.assignedEmployeeIds.includes(currentUser.id));
 
   const routeShopIds = currentRoute?.orderedShopIds || [];
   const allRouteShops = db.shops.filter((s) => {
-    if (!routeShopIds.includes(s.id) || s.isDeleted || s.status !== 'inactive' && s.active === false) return false;
-    if (userHasCustomShops && !isWholeRouteAssigned) {
-      return currentUser.assignedShopIds!.includes(s.id);
+    if (s.isDeleted || s.status === 'inactive' || s.active === false) return false;
+    if (isStaff) {
+      // If staff has specific custom shops assigned across routes, ONLY those shops are visible!
+      if (userHasCustomShops) {
+        return currentUser.assignedShopIds!.includes(s.id);
+      }
+      const isRouteAssigned = Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(s.routeId);
+      const isEmpDirect = s.assignedEmployeeId === currentUser.id || (Array.isArray(s.assignedEmployeeIds) && s.assignedEmployeeIds.includes(currentUser.id));
+      if (!isRouteAssigned && !isEmpDirect) return false;
     }
-    return true;
+    return routeShopIds.includes(s.id);
   });
 
   const myAssignedShops = allRouteShops.filter((s) => s.assignedEmployeeId === currentUser.id || currentUser.assignedShopIds?.includes(s.id));
@@ -106,13 +119,17 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   const assignedShops = hasMultiAgent && myAssignedShops.length > 0 && workloadFilter === 'my'
     ? myAssignedShops
     : allRouteShops;
-  const targetShopIds = assignedShops.map((s) => s.id);
-  
-  // Today visits for target shops
-  const todayVisits = db.visits.filter((v) => v.dateString === todayStr && targetShopIds.includes(v.shopId));
-  const completedVisits = todayVisits.filter(
-    (v) => v.status === 'completed' || v.status === 'order_placed'
-  );
+
+  // Real-time Completed Shops Calculation:
+  // A shop is completed if staff placed an order today OR marked a visit today!
+  const completedVisits = assignedShops.filter((shop) => {
+    const hasOrderToday = db.orders.some(
+      (o) => o.shopId === shop.id && o.dateString === todayStr && !o.isDeleted
+    );
+    const visit = db.visits.find((v) => v.shopId === shop.id && v.dateString === todayStr);
+    const hasVisit = visit && (visit.status === 'completed' || visit.status === 'order_placed' || visit.status === 'no_order');
+    return hasOrderToday || hasVisit;
+  });
 
   // Today orders & collection breakdown (Cash + UPI)
   const todayOrders = db.orders.filter(
@@ -212,11 +229,13 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
     : 0;
 
   // Next shop to visit in user's target sequence
-  const nextShopId = targetShopIds.find((id) => {
-    const v = todayVisits.find((vis) => vis.shopId === id);
-    return !v || (v.status !== 'completed' && v.status !== 'order_placed');
+  const nextShop: Shop | undefined = assignedShops.find((shop) => {
+    const hasOrderToday = db.orders.some(
+      (o) => o.shopId === shop.id && o.dateString === todayStr && !o.isDeleted
+    );
+    const v = db.visits.find((vis) => vis.shopId === shop.id && vis.dateString === todayStr);
+    return !hasOrderToday && (!v || (v.status !== 'completed' && v.status !== 'order_placed'));
   });
-  const nextShop: Shop | undefined = db.shops.find((s) => s.id === nextShopId);
 
   return (
     <div className="mobile-app-shell">
@@ -404,9 +423,15 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
                 <Calendar size={13} />
                 <span>Today, {formattedDate}</span>
               </div>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 700, margin: '2px 0 6px 0' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 700, margin: '2px 0 3px 0' }}>
                 {currentRoute?.name || 'No Route Assigned'}
               </h2>
+              {currentRoute?.area && (
+                <div style={{ fontSize: '12.5px', opacity: 0.95, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                  <MapPin size={13} />
+                  <span>{currentRoute.area}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                 <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11.5px', fontWeight: 600 }}>
                   ✓ {completedVisits.length} Completed

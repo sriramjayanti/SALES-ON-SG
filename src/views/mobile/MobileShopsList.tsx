@@ -46,11 +46,15 @@ export const MobileShopsList: React.FC<MobileShopsListProps> = ({
   const filteredShops = db.shops.filter((s) => {
     if (s.isDeleted || s.status === 'inactive' || s.active === false) return false;
     if (isStaff) {
-      const isCustomAssigned = hasAssignedShops && currentUser.assignedShopIds!.includes(s.id);
-      const isRouteAssigned = availableRouteIds.includes(s.routeId);
-      const isDirectEmp = s.assignedEmployeeId === currentUser.id;
-      if (!isCustomAssigned && !isRouteAssigned && !isDirectEmp) {
-        return false;
+      // If staff has specific assigned shops, strictly show ONLY those shops!
+      if (hasAssignedShops) {
+        if (!currentUser.assignedShopIds!.includes(s.id)) return false;
+      } else {
+        const isRouteAssigned = availableRouteIds.includes(s.routeId);
+        const isDirectEmp = s.assignedEmployeeId === currentUser.id;
+        if (!isRouteAssigned && !isDirectEmp) {
+          return false;
+        }
       }
     }
     const matchesRoute = selectedRoute === 'all' || s.routeId === selectedRoute;

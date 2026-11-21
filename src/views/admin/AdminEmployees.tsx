@@ -303,7 +303,7 @@ export const AdminEmployees: React.FC = () => {
                     </span>
                     <span>•</span>
                     <span style={{ background: '#F0FDF4', color: '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                      Pass: {emp.password || (emp.phone ? emp.phone.replace(/\D/g, '').slice(-5) : '—')}
+                      Pass: {emp.role === 'super_admin' || emp.role === 'admin' ? 'id@varshitha123' : (emp.password || (emp.phone ? emp.phone.replace(/\D/g, '').slice(-5) : '—'))}
                     </span>
                   </div>
                 </td>

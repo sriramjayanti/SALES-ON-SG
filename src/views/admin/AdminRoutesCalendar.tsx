@@ -303,6 +303,11 @@ export const AdminRoutesCalendar: React.FC = () => {
                       <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '14px' }}>
                         {route.name}
                       </div>
+                      {Array.isArray(route.defaultWeekdays) && route.defaultWeekdays.length > 0 && (
+                        <div style={{ fontSize: '11px', color: '#047857', marginTop: '2px', fontWeight: 600 }}>
+                          📅 {route.defaultWeekdays.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}
+                        </div>
+                      )}
                     </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{route.area}</td>
                     <td>
@@ -840,6 +845,83 @@ export const AdminRoutesCalendar: React.FC = () => {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* Scheduled Days Selection (Monday to Sunday) */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 600 }}>
+                📅 Scheduled Route Days (Monday to Sunday) *
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWeekdays([1, 2, 3, 4, 5, 6, 0])}
+                  style={{ fontSize: '11px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  All Days
+                </button>
+                <span style={{ color: 'var(--text-secondary)' }}>•</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWeekdays([1, 2, 3, 4, 5, 6])}
+                  style={{ fontSize: '11px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  Mon-Sat
+                </button>
+                <span style={{ color: 'var(--text-secondary)' }}>•</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWeekdays([])}
+                  style={{ fontSize: '11px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              Select which day(s) this route runs on so staff field app automatically opens this route on that day
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+              {[
+                { day: 1, label: 'Mon', full: 'Monday' },
+                { day: 2, label: 'Tue', full: 'Tuesday' },
+                { day: 3, label: 'Wed', full: 'Wednesday' },
+                { day: 4, label: 'Thu', full: 'Thursday' },
+                { day: 5, label: 'Fri', full: 'Friday' },
+                { day: 6, label: 'Sat', full: 'Saturday' },
+                { day: 0, label: 'Sun', full: 'Sunday' }
+              ].map((item) => {
+                const isSelected = selectedWeekdays.includes(item.day);
+                return (
+                  <button
+                    type="button"
+                    key={item.day}
+                    onClick={() => {
+                      setSelectedWeekdays((prev) =>
+                        prev.includes(item.day)
+                          ? prev.filter((d) => d !== item.day)
+                          : [...prev, item.day]
+                      );
+                    }}
+                    style={{
+                      padding: '8px 2px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: isSelected ? 'var(--primary-light)' : '#FFF',
+                      color: isSelected ? 'var(--primary)' : 'var(--text-secondary)'
+                    }}
+                    title={item.full}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

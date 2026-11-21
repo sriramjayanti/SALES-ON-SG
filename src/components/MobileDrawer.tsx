@@ -114,12 +114,35 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 <span style={{ fontSize: '11.5px', opacity: 0.85 }}>
                   {currentUser.role === 'sales_employee' ? 'Sales Executive' : currentUser.role}
                 </span>
+                <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '2px' }}>
+                  📱 {currentUser.phone} • ID: {currentUser.employeeCode}
+                </div>
               </div>
             </div>
             <button onClick={onClose} style={{ color: '#FFF', opacity: 0.8 }}>
               <X size={20} />
             </button>
           </div>
+
+          {/* Individual Staff Assignment Summary (for Staff) */}
+          {!isAdmin && (
+            <div style={{ background: 'rgba(255,255,255,0.12)', padding: '8px 10px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11.5px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ opacity: 0.85 }}>Assigned Shops:</span>
+                <span style={{ fontWeight: 700 }}>
+                  {currentUser.assignedShopIds && currentUser.assignedShopIds.length > 0
+                    ? `${currentUser.assignedShopIds.length} Shops Assigned`
+                    : 'All Route Shops'}
+                </span>
+              </div>
+              {currentUser.assignedCategoryIds && currentUser.assignedCategoryIds.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ opacity: 0.85 }}>Assigned Categories:</span>
+                  <span style={{ fontWeight: 700 }}>{currentUser.assignedCategoryIds.length} Categories</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Quick Role Switcher (Admin Only) */}
           {isAdmin && (
@@ -298,45 +321,50 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              onOpenSettings();
-              onClose();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              padding: '12px 14px',
-              borderRadius: '8px',
-              color: 'var(--text-primary)',
-              fontWeight: 500,
-              fontSize: '14px'
-            }}
-          >
-            <Settings size={18} color="var(--text-secondary)" /> Business Settings
-          </button>
+          {/* Admin-only options */}
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  onOpenSettings();
+                  onClose();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontWeight: 500,
+                  fontSize: '14px'
+                }}
+              >
+                <Settings size={18} color="var(--text-secondary)" /> Business Settings
+              </button>
 
-          <button
-            onClick={() => {
-              if (window.confirm('Reset all demo data to initial factory defaults?')) {
-                StorageService.resetToFactory();
-                onClose();
-              }
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              padding: '12px 14px',
-              borderRadius: '8px',
-              color: 'var(--text-secondary)',
-              fontWeight: 500,
-              fontSize: '14px'
-            }}
-          >
-            <RefreshCw size={18} color="var(--text-secondary)" /> Reset Demo Data
-          </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('Reset all demo data to initial factory defaults?')) {
+                    StorageService.resetToFactory();
+                    onClose();
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 500,
+                  fontSize: '14px'
+                }}
+              >
+                <RefreshCw size={18} color="var(--text-secondary)" /> Reset Demo Data
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => {

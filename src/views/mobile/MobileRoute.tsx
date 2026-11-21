@@ -80,12 +80,16 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   useEffect(() => {
     if (scheduledRouteForDay) {
       setActiveRouteId(scheduledRouteForDay.id);
+    } else if (availableRoutes.length > 0) {
+      const fallback = availableRoutes[selectedDayOfWeek % availableRoutes.length];
+      if (fallback) setActiveRouteId(fallback.id);
     }
-  }, [selectedDate]);
+  }, [selectedDate, availableRoutes.length]);
 
   const currentRoute: Route | undefined =
-    availableRoutes.find((r) => r.id === activeRouteId) ||
     scheduledRouteForDay ||
+    availableRoutes.find((r) => r.id === activeRouteId) ||
+    availableRoutes[selectedDayOfWeek % (availableRoutes.length || 1)] ||
     availableRoutes[0];
 
   // Holiday check
@@ -94,35 +98,28 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   // Workload filter for multi-agent routes
   const [workloadFilter, setWorkloadFilter] = useState<'my' | 'all'>('my');
 
-  // Check if whole route is assigned or only specific shops
-  const isWholeRouteAssigned = (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(currentRoute?.id || '')) ||
-    currentRoute?.assignedEmployeeId === currentUser.id ||
-    (Array.isArray(currentRoute?.assignedEmployeeIds) && currentRoute.assignedEmployeeIds.includes(currentUser.id));
-
   // Ordered shops in route
   const orderedShopIds = currentRoute?.orderedShopIds || [];
   let allOrderedShops: Shop[] = orderedShopIds
     .map((id) => db.shops.find((s) => s.id === id && !s.isDeleted && s.status !== 'inactive' && s.active !== false))
     .filter(Boolean) as Shop[];
 
-  // If user has specific shops assigned across routes and not the whole route, restrict to assigned shops
-  if (hasAssignedShops && !isWholeRouteAssigned) {
+  // If staff has specific custom shops assigned across routes, ONLY those shops are visible!
+  if (hasAssignedShops) {
     allOrderedShops = allOrderedShops.filter((s) => currentUser.assignedShopIds!.includes(s.id));
-  }
-
-  // Also include any assigned shops in this route that weren't in orderedShopIds
-  if (hasAssignedShops && currentRoute) {
-    const extraAssigned = db.shops.filter(
-      (s) =>
-        currentUser.assignedShopIds!.includes(s.id) &&
-        s.routeId === currentRoute.id &&
-        !s.isDeleted &&
-        s.status !== 'inactive' &&
-        s.active !== false &&
-        !allOrderedShops.some((existing) => existing.id === s.id)
-    );
-    if (extraAssigned.length > 0) {
-      allOrderedShops = [...allOrderedShops, ...extraAssigned];
+    if (currentRoute) {
+      const extraAssigned = db.shops.filter(
+        (s) =>
+          currentUser.assignedShopIds!.includes(s.id) &&
+          s.routeId === currentRoute.id &&
+          !s.isDeleted &&
+          s.status !== 'inactive' &&
+          s.active !== false &&
+          !allOrderedShops.some((existing) => existing.id === s.id)
+      );
+      if (extraAssigned.length > 0) {
+        allOrderedShops = [...allOrderedShops, ...extraAssigned];
+      }
     }
   }
 
@@ -142,9 +139,14 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   // Visits for selected date
   const visitsForDate: Visit[] = db.visits.filter((v) => v.dateString === selectedDate);
 
+  // Real-time Completed Count: A shop is completed if an order was placed on selectedDate OR marked visited
   const completedCount = orderedShops.filter((s) => {
+    const hasOrder = db.orders.some(
+      (o) => o.shopId === s.id && o.dateString === selectedDate && !o.isDeleted
+    );
     const v = visitsForDate.find((vis) => vis.shopId === s.id);
-    return v && (v.status === 'completed' || v.status === 'order_placed');
+    const hasVisit = v && (v.status === 'completed' || v.status === 'order_placed' || v.status === 'no_order');
+    return hasOrder || hasVisit;
   }).length;
 
   // Pending Payments on this Route & Today
@@ -182,6 +184,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   const [newRouteName, setNewRouteName] = useState('');
   const [newRouteCode, setNewRouteCode] = useState('');
   const [newRouteArea, setNewRouteArea] = useState('');
+  const [newRouteWeekdays, setNewRouteWeekdays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [selectedShopIdsForNewRoute, setSelectedShopIdsForNewRoute] = useState<string[]>([]);
 
   const toggleShopForNewRoute = (shopId: string) => {
@@ -200,7 +203,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
       area: newRouteArea.trim() || 'General Territory',
       assignedEmployeeId: currentUser.id,
       orderedShopIds: selectedShopIdsForNewRoute,
-      defaultWeekdays: [1, 2, 3, 4, 5, 6],
+      defaultWeekdays: newRouteWeekdays.length > 0 ? newRouteWeekdays : [1, 2, 3, 4, 5, 6],
       active: true
     });
 
@@ -209,6 +212,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     setNewRouteName('');
     setNewRouteCode('');
     setNewRouteArea('');
+    setNewRouteWeekdays([1, 2, 3, 4, 5, 6]);
     setSelectedShopIdsForNewRoute([]);
     alert(`New Route "${created.name}" created and assigned!`);
   };
@@ -893,6 +897,70 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                 placeholder="e.g. Vijayawada Central"
                 style={{ width: '100%', marginTop: '4px' }}
               />
+            </div>
+          </div>
+
+          {/* Scheduled Days Selection (Monday to Sunday) */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Scheduled Days (Mon to Sun) *
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setNewRouteWeekdays([1, 2, 3, 4, 5, 6, 0])}
+                  style={{ fontSize: '10.5px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  All Days
+                </button>
+                <span style={{ color: 'var(--text-secondary)' }}>•</span>
+                <button
+                  type="button"
+                  onClick={() => setNewRouteWeekdays([1, 2, 3, 4, 5, 6])}
+                  style={{ fontSize: '10.5px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  Mon-Sat
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+              {[
+                { day: 1, label: 'Mon' },
+                { day: 2, label: 'Tue' },
+                { day: 3, label: 'Wed' },
+                { day: 4, label: 'Thu' },
+                { day: 5, label: 'Fri' },
+                { day: 6, label: 'Sat' },
+                { day: 0, label: 'Sun' }
+              ].map((item) => {
+                const isSelected = newRouteWeekdays.includes(item.day);
+                return (
+                  <button
+                    type="button"
+                    key={item.day}
+                    onClick={() => {
+                      setNewRouteWeekdays((prev) =>
+                        prev.includes(item.day)
+                          ? prev.filter((d) => d !== item.day)
+                          : [...prev, item.day]
+                      );
+                    }}
+                    style={{
+                      padding: '7px 0',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: isSelected ? 'var(--primary-light)' : '#FFF',
+                      color: isSelected ? 'var(--primary)' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

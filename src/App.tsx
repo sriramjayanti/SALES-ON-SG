@@ -239,13 +239,35 @@ export function App() {
                   {currentUser.name.charAt(0)}
                 </div>
                 <h3 style={{ fontSize: '18px', fontWeight: 700 }}>{currentUser.name}</h3>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{currentUser.email} • {currentUser.phone}</div>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  ID: {currentUser.employeeCode} • 📱 {currentUser.phone}
+                </div>
                 <span className="status-chip active" style={{ marginTop: '8px' }}>
                   {currentUser.role === 'sales_employee' ? 'Sales Executive' : currentUser.role}
                 </span>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '16px', textAlign: 'left' }}>
+                  <div style={{ background: '#FAFDFB', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Assigned Shops</div>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--primary)', marginTop: '2px' }}>
+                      {currentUser.assignedShopIds && currentUser.assignedShopIds.length > 0
+                        ? `${currentUser.assignedShopIds.length} Shops`
+                        : 'All Route Shops'}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#FAFDFB', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Product Categories</div>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--primary)', marginTop: '2px' }}>
+                      {currentUser.assignedCategoryIds && currentUser.assignedCategoryIds.length > 0
+                        ? `${currentUser.assignedCategoryIds.length} Assigned`
+                        : 'All Products'}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div style={{ background: '#FFF', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px' }}>
+              <div style={{ background: '#FFF', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px', marginBottom: '16px' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600, marginBottom: '10px' }}>
                   Active Permissions
                 </div>
@@ -257,6 +279,27 @@ export function App() {
                   ))}
                 </div>
               </div>
+
+              <button
+                onClick={() => StorageService.logout()}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  color: 'var(--danger)',
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                <LogOut size={16} /> Logout from App
+              </button>
             </div>
           </div>
         );

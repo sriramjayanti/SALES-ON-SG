@@ -121,7 +121,11 @@ export const StorageService = {
 
   isAuthenticated(): boolean {
     try {
-      return !!(localStorage.getItem(AUTH_SESSION_KEY) || sessionStorage.getItem(AUTH_SESSION_KEY));
+      // Secure per-session authentication: opening the software starts at the login screen
+      const sessStr = sessionStorage.getItem(AUTH_SESSION_KEY);
+      if (!sessStr) return false;
+      const sess = JSON.parse(sessStr);
+      return !!sess?.userId;
     } catch {
       return false;
     }
@@ -154,10 +158,15 @@ export const StorageService = {
         admin.password = 'id@varshitha123';
         db.currentUserId = admin.id;
         this.saveDb(db);
-        localStorage.setItem(
-          AUTH_SESSION_KEY,
-          JSON.stringify({ userId: admin.id, role: 'super_admin', loggedInAt: new Date().toISOString() })
-        );
+        const sessionData = {
+          userId: admin.id,
+          role: 'super_admin',
+          name: admin.name,
+          phone: admin.phone,
+          loggedInAt: new Date().toISOString()
+        };
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
         FirestoreSync.saveDocument('employees', admin.id, admin);
         FirebaseAuthService.authenticateWithFirebase('7799225566', cleanPass, 'admin');
         notify();
@@ -170,39 +179,54 @@ export const StorageService = {
       }
     }
 
-    // 2. Check All Staff Accounts (created by Admin - strictly exclude Admin)
+    // 2. Exact match for Staff Accounts
+    // Prevent loose matching so every individual staff member gets their own customized login & profile
     const matched = db.employees.find((e) => {
       if (e.id === 'emp_admin' || e.role === 'super_admin' || (e.phone && e.phone.replace(/\D/g, '') === '7799225566')) {
         return false;
       }
+      if (e.isDeleted || e.status === 'inactive' || e.active === false) {
+        return false;
+      }
       const empDigits = (e.phone || '').replace(/\D/g, '');
-      return (
-        (cleanDigits && (empDigits === cleanDigits || empDigits.endsWith(cleanDigits) || cleanDigits.endsWith(empDigits))) ||
-        e.phone === cleanId ||
-        (e.employeeCode && e.employeeCode.toLowerCase() === cleanId.toLowerCase()) ||
-        (e.email && e.email.toLowerCase() === cleanId.toLowerCase())
-      );
+      const userLast10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
+      const empLast10 = empDigits.length >= 10 ? empDigits.slice(-10) : empDigits;
+
+      // Strict phone matching: matching 10-digit phone, or exact full phone
+      const phoneMatches =
+        (userLast10.length >= 5 && userLast10 === empLast10) ||
+        (cleanDigits.length >= 5 && empDigits === cleanDigits);
+
+      const codeMatches = !!(cleanId && e.employeeCode && e.employeeCode.trim().toLowerCase() === cleanId.toLowerCase());
+      const emailMatches = !!(cleanId && e.email && e.email.trim().toLowerCase() === cleanId.toLowerCase());
+
+      return phoneMatches || codeMatches || emailMatches;
     });
 
     if (matched) {
       const empDigits = (matched.phone || '').replace(/\D/g, '');
-      const last5 = empDigits.slice(-5);
+      const last5 = empDigits.length >= 5 ? empDigits.slice(-5) : '';
 
       // Staff authentication succeeds if:
       // a) Password matches the custom password set/changed by Admin, OR
       // b) Password matches the last 5 digits of their phone number
       const isPasswordMatch =
-        cleanPass === matched.password ||
+        (matched.password && cleanPass === matched.password) ||
         (last5 && cleanPass === last5);
 
       if (isPasswordMatch) {
         db.currentUserId = matched.id;
         this.saveDb(db);
         const isUserAdmin = matched.role === 'super_admin' || matched.role === 'admin';
-        localStorage.setItem(
-          AUTH_SESSION_KEY,
-          JSON.stringify({ userId: matched.id, role: matched.role, loggedInAt: new Date().toISOString() })
-        );
+        const sessionData = {
+          userId: matched.id,
+          role: matched.role,
+          name: matched.name,
+          phone: matched.phone,
+          loggedInAt: new Date().toISOString()
+        };
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
         FirebaseAuthService.authenticateWithFirebase(matched.phone, cleanPass, isUserAdmin ? 'admin' : 'staff');
         notify();
         return {
@@ -220,7 +244,7 @@ export const StorageService = {
 
     return {
       success: false,
-      message: 'Invalid Phone Number / Login ID or Password. Please verify your details.'
+      message: 'No registered user found with this Phone Number or Login ID. Please check the number or contact your Admin.'
     };
   },
 
@@ -253,12 +277,14 @@ export const StorageService = {
           admin.password = 'id@varshitha123';
         }
 
-        // For staff with phone, ensure password exists (default to last 5 digits)
+        // For staff with phone, ensure password defaults to last 5 digits and clean any legacy Varshitha@ passwords
         parsed.employees.forEach((emp: any) => {
-          if (emp.role !== 'super_admin' && emp.role !== 'admin' && !emp.password && emp.phone) {
+          if (emp.role !== 'super_admin' && emp.role !== 'admin' && emp.phone) {
             const digits = emp.phone.replace(/\D/g, '');
             if (digits.length >= 5) {
-              emp.password = digits.slice(-5);
+              if (!emp.password || emp.password.startsWith('Varshitha@') || emp.password === 'id@varshitha123') {
+                emp.password = digits.slice(-5);
+              }
             }
           }
         });
@@ -353,8 +379,23 @@ export const StorageService = {
   // Active User / Session
   getCurrentUser(): Employee {
     const db = this.getDb();
-    const user = db.employees.find(e => e.id === db.currentUserId);
-    return user || db.employees[0] || INITIAL_DATABASE.employees[0];
+    let sessionUserId: string | null = null;
+    try {
+      const sessStr = sessionStorage.getItem(AUTH_SESSION_KEY) || localStorage.getItem(AUTH_SESSION_KEY);
+      if (sessStr) {
+        const sess = JSON.parse(sessStr);
+        if (sess?.userId) sessionUserId = sess.userId;
+      }
+    } catch {}
+
+    const targetId = sessionUserId || db.currentUserId;
+    const user = db.employees.find((e) => e.id === targetId && !e.isDeleted);
+    if (user) return user;
+
+    const dbUser = db.employees.find((e) => e.id === db.currentUserId && !e.isDeleted);
+    if (dbUser) return dbUser;
+
+    return db.employees[0] || INITIAL_DATABASE.employees[0];
   },
 
   switchUser(userId: string) {
@@ -912,8 +953,9 @@ export const StorageService = {
     orderId?: string
   ) {
     const db = this.getDb();
-    const visit = db.visits.find(v => v.dateString === dateString && v.shopId === shopId);
+    let visit: Visit | undefined = db.visits.find(v => v.dateString === dateString && v.shopId === shopId);
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const user = this.getCurrentUser();
     if (visit) {
       visit.status = status;
       if (reason) visit.outcomeReason = reason;
@@ -924,9 +966,24 @@ export const StorageService = {
       if (status === 'completed' || status === 'order_placed' || status === 'no_order' || status === 'skipped') {
         visit.completedAt = nowTime;
       }
-      this.saveDb(db);
-      FirestoreSync.saveDocument('visits', visit.id, visit);
+    } else {
+      const newVisit: Visit = {
+        id: `vis_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        shopId,
+        dateString,
+        routeId: db.shops.find(s => s.id === shopId)?.routeId || '',
+        employeeId: user.id,
+        status,
+        startedAt: nowTime,
+        completedAt: nowTime,
+        outcomeReason: reason,
+        orderId
+      };
+      db.visits.push(newVisit);
+      visit = newVisit;
     }
+    this.saveDb(db);
+    FirestoreSync.saveDocument('visits', visit.id, visit);
   },
 
   // ORDERS & FINALIZATION (Idempotent, sequential invoice, snapshot)
