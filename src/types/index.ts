@@ -28,6 +28,7 @@ export interface Employee {
   active?: boolean;
   isDeleted?: boolean;
   assignedRouteIds: string[];
+  assignedShopIds?: string[]; // Custom shops assigned to this staff across different routes
   assignedCategoryIds?: string[]; // Categories assigned to this sales agent
   permissions: UserPermissions;
   joinedAt: string;
@@ -192,10 +193,20 @@ export interface Order {
   deliveryNotes?: string;
 
   paymentStatus: 'unpaid' | 'paid' | 'partial';
-  paymentMethod?: 'cash' | 'upi' | 'credit' | 'cheque';
+  paymentMethod?: 'cash' | 'upi' | 'credit' | 'cheque' | 'split';
+  cashAmount?: number; // Amount paid in Cash
+  upiAmount?: number; // Amount paid via UPI
   amountPaid: number;
   balanceDue: number; // Has to be paid (grandTotal - amountPaid)
   paidAt?: string;
+  paymentHistory?: {
+    amount: number;
+    method: 'cash' | 'upi' | 'split' | 'credit' | 'cheque';
+    cashAmount?: number;
+    upiAmount?: number;
+    timestamp: string;
+    note?: string;
+  }[];
 
   // Next Visit Scheduling
   nextVisitDate?: string;

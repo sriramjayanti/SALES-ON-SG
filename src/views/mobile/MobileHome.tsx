@@ -43,7 +43,7 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
     year: 'numeric'
   });
 
-  // Filter routes: Staff only sees their assigned routes; Admin sees all active routes
+  // Filter routes: Staff only sees their assigned routes (or routes with assigned shops); Admin sees all active routes
   const isStaff = currentUser.role !== 'super_admin' && currentUser.role !== 'admin';
   const availableRoutes = db.routes.filter((r) => {
     if (r.isDeleted || r.active === false) return false;
@@ -51,7 +51,8 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
     return (
       (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(r.id)) ||
       (Array.isArray(r.assignedEmployeeIds) && r.assignedEmployeeIds.includes(currentUser.id)) ||
-      r.assignedEmployeeId === currentUser.id
+      r.assignedEmployeeId === currentUser.id ||
+      (Array.isArray(currentUser.assignedShopIds) && currentUser.assignedShopIds.some(sid => db.shops.find(s => s.id === sid)?.routeId === r.id))
     );
   });
 
@@ -83,10 +84,22 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   // Multi-agent workload filter
   const [workloadFilter, setWorkloadFilter] = useState<'my' | 'all'>('my');
 
-  // Calculate metrics
+  // Calculate metrics (Staff assigned specific shops across different routes)
+  const userHasCustomShops = isStaff && Array.isArray(currentUser.assignedShopIds) && currentUser.assignedShopIds.length > 0;
+  const isWholeRouteAssigned = (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(currentRoute?.id || '')) ||
+    currentRoute?.assignedEmployeeId === currentUser.id ||
+    (Array.isArray(currentRoute?.assignedEmployeeIds) && currentRoute.assignedEmployeeIds.includes(currentUser.id));
+
   const routeShopIds = currentRoute?.orderedShopIds || [];
-  const allRouteShops = db.shops.filter((s) => routeShopIds.includes(s.id) && !s.isDeleted && s.status !== 'inactive' && s.active !== false);
-  const myAssignedShops = allRouteShops.filter((s) => s.assignedEmployeeId === currentUser.id);
+  const allRouteShops = db.shops.filter((s) => {
+    if (!routeShopIds.includes(s.id) || s.isDeleted || s.status !== 'inactive' && s.active === false) return false;
+    if (userHasCustomShops && !isWholeRouteAssigned) {
+      return currentUser.assignedShopIds!.includes(s.id);
+    }
+    return true;
+  });
+
+  const myAssignedShops = allRouteShops.filter((s) => s.assignedEmployeeId === currentUser.id || currentUser.assignedShopIds?.includes(s.id));
   const hasMultiAgent = allRouteShops.some((s) => s.assignedEmployeeId);
 
   // Active target shops based on workload filter
@@ -101,10 +114,15 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
     (v) => v.status === 'completed' || v.status === 'order_placed'
   );
 
-  // Today orders
+  // Today orders & collection breakdown (Cash + UPI)
   const todayOrders = db.orders.filter(
     (o) => o.employeeId === currentUser.id && o.dateString === todayStr && o.status === 'completed'
   );
+
+  const totalPaidToday = todayOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+  const cashPaidToday = todayOrders.reduce((sum, o) => sum + (o.cashAmount || (o.paymentMethod === 'cash' ? o.amountPaid : 0) || 0), 0);
+  const upiPaidToday = todayOrders.reduce((sum, o) => sum + (o.upiAmount || (o.paymentMethod === 'upi' ? o.amountPaid : 0) || 0), 0);
+  const totalSalesToday = todayOrders.reduce((sum, o) => sum + o.grandTotal, 0);
 
   // Delivered sales (only counted after delivery to shop is confirmed!)
   const deliveredOrders = todayOrders.filter((o) => o.deliveryStatus === 'delivered');
@@ -485,13 +503,13 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
           </button>
         </div>
 
-        {/* 4 Metric Tiles with Completed & Remaining Shops prominent */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
-          {/* Tile 1: Completed Shops */}
+        {/* 4 KPI Cards: Remaining Shops, Completed Shops, Amount Paid (Cash+UPI), Balance Amount Due */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '14px' }}>
+          {/* Card 1: Remaining Shops */}
           <div
             style={{
               background: '#FFF',
-              border: '1px solid #A7F3D0',
+              border: '1.5px solid #FCD34D',
               borderRadius: 'var(--radius-md)',
               padding: '12px 14px',
               display: 'flex',
@@ -501,45 +519,24 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
             }}
           >
             <div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Completed</span>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 700, color: 'var(--success)', marginTop: '1px' }}>
-                {completedVisits.length} <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>shops</span>
+              <span style={{ fontSize: '11px', color: '#92400E', fontWeight: 700, textTransform: 'uppercase' }}>Remaining</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 800, color: '#D97706', marginTop: '1px' }}>
+                {Math.max(0, assignedShops.length - completedVisits.length)} <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>shops</span>
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Done: {completedVisits.length} of {assignedShops.length} shops
               </div>
             </div>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--success-light)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CheckCircle2 size={20} />
-            </div>
-          </div>
-
-          {/* Tile 2: Remaining Shops */}
-          <div
-            style={{
-              background: '#FFF',
-              border: '1px solid #FDE68A',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              boxShadow: 'var(--shadow-sm)'
-            }}
-          >
-            <div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Remaining</span>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 700, color: 'var(--warning)', marginTop: '1px' }}>
-                {Math.max(0, assignedShops.length - completedVisits.length)} <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>shops</span>
-              </div>
-            </div>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--warning-light)', color: '#B45309', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#FEF3C7', color: '#B45309', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '16px' }}>
               ⏱
             </div>
           </div>
 
-          {/* Tile 3: Orders Booked */}
+          {/* Card 2: Completed Shops */}
           <div
             style={{
               background: '#FFF',
-              border: '1px solid var(--border)',
+              border: '1.5px solid #A7F3D0',
               borderRadius: 'var(--radius-md)',
               padding: '12px 14px',
               display: 'flex',
@@ -549,21 +546,24 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
             }}
           >
             <div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Orders Booked</span>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '22px', fontWeight: 700, color: 'var(--accent)', marginTop: '1px' }}>
-                {todayOrders.length}
+              <span style={{ fontSize: '11px', color: '#065F46', fontWeight: 700, textTransform: 'uppercase' }}>Completed</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 800, color: 'var(--success)', marginTop: '1px' }}>
+                {completedVisits.length} <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>shops</span>
+              </div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {percentage}% route progress
               </div>
             </div>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#FEF3C7', color: '#B45309', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText size={18} />
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--success-light)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle2 size={20} />
             </div>
           </div>
 
-          {/* Tile 4: Delivered Sales (Updates after delivery is confirmed!) */}
+          {/* Card 3: Amount Paid Today (Cash + UPI breakdown) */}
           <div
             style={{
               background: '#FFF',
-              border: '1px solid var(--border)',
+              border: '1.5px solid #86EFAC',
               borderRadius: 'var(--radius-md)',
               padding: '12px 14px',
               display: 'flex',
@@ -573,17 +573,87 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
             }}
           >
             <div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Delivered Sales</span>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 700, color: 'var(--primary)', marginTop: '1px' }}>
+              <span style={{ fontSize: '11px', color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Amount Paid</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 800, color: '#15803D', marginTop: '1px' }}>
+                ₹{totalPaidToday.toLocaleString()}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                💵 ₹{cashPaidToday.toLocaleString()} • 📱 ₹{upiPaidToday.toLocaleString()}
+              </div>
+            </div>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#DCFCE7', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+              ₹
+            </div>
+          </div>
+
+          {/* Card 4: Balance Pending Amount */}
+          <div
+            style={{
+              background: '#FFF',
+              border: '1.5px solid #FECACA',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '11px', color: '#991B1B', fontWeight: 700, textTransform: 'uppercase' }}>Balance Due</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 800, color: routePendingDue > 0 ? '#DC2626' : 'var(--success)', marginTop: '1px' }}>
+                ₹{routePendingDue.toLocaleString()}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {routeUnpaidOrders.length > 0 ? `${routeUnpaidOrders.length} shops pending` : 'All dues cleared'}
+              </div>
+            </div>
+            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#FEE2E2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CreditCard size={18} />
+            </div>
+          </div>
+        </div>
+
+        {/* Secondary Snapshot Bar: Orders Booked & Delivered Sales */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
+          <div
+            style={{
+              background: '#FFF',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '9px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>Orders Booked</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '16px', fontWeight: 700, color: 'var(--accent)' }}>
+                {todayOrders.length} <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>(₹{totalSalesToday.toLocaleString()})</span>
+              </div>
+            </div>
+            <FileText size={16} color="var(--accent)" />
+          </div>
+
+          <div
+            style={{
+              background: '#FFF',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '9px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <div>
+              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>Delivered Sales</span>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '16px', fontWeight: 700, color: 'var(--primary)' }}>
                 ₹{deliveredSalesToday.toLocaleString()}
               </div>
-              <div style={{ fontSize: '10.5px', color: pendingDeliveryAmount > 0 ? '#B45309' : 'var(--text-secondary)', marginTop: '2px' }}>
-                {pendingDeliveryAmount > 0 ? `+ ₹${pendingDeliveryAmount.toLocaleString()} pending` : `${deliveredOrders.length} delivered`}
-              </div>
             </div>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Truck size={18} />
-            </div>
+            <Truck size={16} color="var(--primary)" />
           </div>
         </div>
 

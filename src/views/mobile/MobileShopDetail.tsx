@@ -19,7 +19,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
-import { Employee, Shop, Product, Category } from '../../types';
+import { Employee, Shop, Product, Category, Order } from '../../types';
 
 interface MobileShopDetailProps {
   shopId: string;
@@ -43,6 +43,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
   // If sales agent has assigned product categories, show ONLY those categories & products
   const hasCategoryRestriction =
     currentUser.role !== 'super_admin' &&
+    currentUser.role !== 'admin' &&
     Array.isArray(currentUser.assignedCategoryIds) &&
     currentUser.assignedCategoryIds.length > 0;
 
@@ -61,6 +62,12 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
   const [showNoOrderModal, setShowNoOrderModal] = useState<boolean>(false);
   const [noOrderReason, setNoOrderReason] = useState<string>('Shop Owner Unavailable');
   const [stockWarning, setStockWarning] = useState<string | null>(null);
+
+  // Dual Payment Collection Modal State
+  const [collectModalOrder, setCollectModalOrder] = useState<Order | null>(null);
+  const [collectMode, setCollectMode] = useState<'cash' | 'upi' | 'split'>('cash');
+  const [collectCashInput, setCollectCashInput] = useState<string>('');
+  const [collectUpiInput, setCollectUpiInput] = useState<string>('');
 
   if (!shop) {
     return (
@@ -161,7 +168,9 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
   }, 0);
 
   // Shop order history & pending dues
-  const shopOrders = db.orders.filter((o) => o.shopId === shop.id);
+  const shopOrders = db.orders.filter((o) => o.shopId === shop.id && !o.isDeleted);
+  const totalBilled = shopOrders.reduce((sum, o) => sum + o.grandTotal, 0);
+  const totalPaid = shopOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
   const unpaidOrders = shopOrders.filter((o) => o.status === 'completed' && o.paymentStatus !== 'paid');
   const totalDue = unpaidOrders.reduce((sum, o) => sum + (o.grandTotal - (o.amountPaid || 0)), 0);
 
@@ -199,26 +208,57 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
     }
   };
 
-  const handleCollectPayment = (orderId: string, pendingAmt: number) => {
-    const input = window.prompt(
-      `Enter collection amount (Pending Balance Due: ₹${pendingAmt}):`,
-      pendingAmt.toString()
-    );
-    if (input === null) return;
-    const amt = parseFloat(input);
-    if (isNaN(amt) || amt <= 0) {
-      alert('Please enter a valid payment amount.');
+  const openCollectModal = (order: Order) => {
+    setCollectModalOrder(order);
+    const pending = order.grandTotal - (order.amountPaid || 0);
+    setCollectMode('cash');
+    setCollectCashInput(pending.toString());
+    setCollectUpiInput('');
+  };
+
+  const submitCollectPayment = () => {
+    if (!collectModalOrder) return;
+    const pendingAmt = collectModalOrder.grandTotal - (collectModalOrder.amountPaid || 0);
+    const parsedCash = parseFloat(collectCashInput) || 0;
+    const parsedUpi = parseFloat(collectUpiInput) || 0;
+
+    let cAmt = 0;
+    let uAmt = 0;
+    if (collectMode === 'cash') {
+      cAmt = parsedCash;
+    } else if (collectMode === 'upi') {
+      uAmt = parsedUpi;
+    } else {
+      cAmt = parsedCash;
+      uAmt = parsedUpi;
+    }
+
+    const totalCollected = cAmt + uAmt;
+    if (totalCollected <= 0) {
+      alert('Please enter a valid payment amount (> 0).');
       return;
     }
-    const payAmt = Math.min(amt, pendingAmt);
+
+    const payAmt = Math.min(totalCollected, pendingAmt);
     const isFull = payAmt >= pendingAmt;
-    StorageService.recordPayment(orderId, isFull ? 'paid' : 'partial', payAmt, 'cash');
-    const remaining = pendingAmt - payAmt;
-    if (remaining > 0) {
-      alert(`₹${payAmt} collected successfully.\nRemaining Balance Pending: ₹${remaining} (will remain pending until fully paid).`);
+    const finalMethod = (cAmt > 0 && uAmt > 0) ? 'split' : (uAmt > 0 ? 'upi' : 'cash');
+
+    StorageService.recordPayment(
+      collectModalOrder.id,
+      isFull ? 'paid' : 'partial',
+      payAmt,
+      finalMethod,
+      { cashAmount: cAmt, upiAmount: uAmt }
+    );
+
+    const rem = Math.max(0, pendingAmt - payAmt);
+    if (rem > 0) {
+      alert(`₹${payAmt} collected (Cash: ₹${cAmt}, UPI: ₹${uAmt}).\nRemaining Balance Due: ₹${rem} (will show pending until paid).`);
     } else {
-      alert(`Full payment of ₹${payAmt} collected! Bill is now fully settled.`);
+      alert(`Full payment of ₹${payAmt} received! Order #${collectModalOrder.orderNo} is now fully cleared.`);
     }
+
+    setCollectModalOrder(null);
   };
 
   // Handle No Order
@@ -386,6 +426,22 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                 <span>Requested Appointment: {shop.preferredVisitDate || ''} {shop.preferredVisitTime || ''}</span>
               </div>
             )}
+
+            {/* Shop Cumulative Financial KPI Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
+              <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px', textAlign: 'center' }}>
+                <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', display: 'block' }}>Total Billed</span>
+                <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>₹{totalBilled.toLocaleString()}</strong>
+              </div>
+              <div style={{ background: '#ECFDF5', padding: '8px 10px', borderRadius: '6px', textAlign: 'center' }}>
+                <span style={{ fontSize: '10.5px', color: '#047857', display: 'block' }}>Total Paid</span>
+                <strong style={{ fontSize: '13.5px', color: '#047857' }}>₹{totalPaid.toLocaleString()}</strong>
+              </div>
+              <div style={{ background: totalDue > 0 ? '#FEF2F2' : '#F0FDF4', padding: '8px 10px', borderRadius: '6px', textAlign: 'center', border: totalDue > 0 ? '1px solid #FECACA' : '1px solid #BBF7D0' }}>
+                <span style={{ fontSize: '10.5px', color: totalDue > 0 ? '#DC2626' : '#16A34A', display: 'block', fontWeight: 600 }}>Balance Due</span>
+                <strong style={{ fontSize: '13.5px', color: totalDue > 0 ? '#DC2626' : '#16A34A' }}>₹{totalDue.toLocaleString()}</strong>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -414,20 +470,26 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
               </div>
             </div>
             <button
-              onClick={() => setActiveTab('history')}
+              onClick={() => {
+                if (unpaidOrders[0]) {
+                  openCollectModal(unpaidOrders[0]);
+                } else {
+                  setActiveTab('history');
+                }
+              }}
               style={{
                 background: '#DC2626',
                 color: '#FFF',
-                padding: '6px 12px',
+                padding: '6px 14px',
                 borderRadius: 'var(--radius-sm)',
                 fontSize: '12px',
-                fontWeight: 600,
+                fontWeight: 700,
                 border: 'none',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap'
               }}
             >
-              Collect
+              Collect Due
             </button>
           </div>
         )}
@@ -801,7 +863,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                           ₹{ord.grandTotal.toLocaleString()}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          {ord.items.length} Items • {ord.dateString}
+                          {ord.items.length} Items • {ord.dateString} {ord.createdAt ? `(${new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}
                         </div>
                       </div>
                     </div>
@@ -816,7 +878,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
                       <span className={`status-chip ${isPaid ? 'paid' : ord.paymentStatus === 'partial' ? 'partial' : 'unpaid'}`} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <CreditCard size={12} />
                         {isPaid
-                          ? 'Payment Paid'
+                          ? `Payment Paid (${ord.paymentMethod === 'split' ? `Cash: ₹${ord.cashAmount || 0} + UPI: ₹${ord.upiAmount || 0}` : ord.paymentMethod?.toUpperCase() || 'CASH'})`
                           : ord.paymentStatus === 'partial'
                           ? `Partial Paid (Paid: ₹${(ord.amountPaid || 0).toLocaleString()} • Due: ₹${pendingAmt.toLocaleString()})`
                           : `Unpaid (Due: ₹${pendingAmt.toLocaleString()})`}
@@ -837,7 +899,7 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
 
                       {!isPaid && (
                         <button
-                          onClick={() => handleCollectPayment(ord.id, pendingAmt)}
+                          onClick={() => openCollectModal(ord)}
                           style={{
                             flex: 1,
                             padding: '7px 12px',
@@ -945,6 +1007,173 @@ export const MobileShopDetail: React.FC<MobileShopDetailProps> = ({
               <button className="btn-secondary" onClick={() => setShowNoOrderModal(false)}>Cancel</button>
               <button className="btn-primary" style={{ background: 'var(--danger)' }} onClick={handleMarkNoOrder}>
                 Confirm No Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dual Payment Collection Modal (Cash + UPI Split Allowed) */}
+      {collectModalOrder && (
+        <div className="modal-backdrop" onClick={() => setCollectModalOrder(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title" style={{ fontSize: '16px' }}>Collect Bill Payment</h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  {collectModalOrder.orderNo} • {shop.name}
+                </div>
+              </div>
+              <button onClick={() => setCollectModalOrder(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ background: '#FAFDFB', border: '1px solid var(--border)', borderRadius: '6px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Pending Due to Collect:</span>
+                <strong style={{ color: '#DC2626', fontSize: '15px' }}>
+                  ₹{(collectModalOrder.grandTotal - (collectModalOrder.amountPaid || 0)).toLocaleString()}
+                </strong>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  Payment Mode
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectMode('cash');
+                      const due = collectModalOrder.grandTotal - (collectModalOrder.amountPaid || 0);
+                      setCollectCashInput(due.toString());
+                      setCollectUpiInput('');
+                    }}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: '6px',
+                      border: collectMode === 'cash' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: collectMode === 'cash' ? 'var(--primary-light)' : '#FFF',
+                      color: collectMode === 'cash' ? 'var(--primary)' : 'var(--text-primary)',
+                      fontWeight: collectMode === 'cash' ? 700 : 500,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    💵 Cash
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectMode('upi');
+                      const due = collectModalOrder.grandTotal - (collectModalOrder.amountPaid || 0);
+                      setCollectUpiInput(due.toString());
+                      setCollectCashInput('');
+                    }}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: '6px',
+                      border: collectMode === 'upi' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: collectMode === 'upi' ? 'var(--primary-light)' : '#FFF',
+                      color: collectMode === 'upi' ? 'var(--primary)' : 'var(--text-primary)',
+                      fontWeight: collectMode === 'upi' ? 700 : 500,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📱 UPI
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectMode('split');
+                      const due = collectModalOrder.grandTotal - (collectModalOrder.amountPaid || 0);
+                      const half = Math.round(due / 2);
+                      setCollectCashInput(half.toString());
+                      setCollectUpiInput((due - half).toString());
+                    }}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: '6px',
+                      border: collectMode === 'split' ? '2px solid #059669' : '1px solid var(--border)',
+                      background: collectMode === 'split' ? '#ECFDF5' : '#FFF',
+                      color: collectMode === 'split' ? '#047857' : 'var(--text-primary)',
+                      fontWeight: collectMode === 'split' ? 700 : 600,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Cash + UPI Split
+                  </button>
+                </div>
+              </div>
+
+              {collectMode === 'split' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>💵 Cash Portion (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={collectCashInput}
+                      onChange={(e) => setCollectCashInput(e.target.value)}
+                      placeholder="0"
+                      style={{ width: '100%', fontSize: '15px', fontWeight: 700 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>📱 UPI Portion (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={collectUpiInput}
+                      onChange={(e) => setCollectUpiInput(e.target.value)}
+                      placeholder="0"
+                      style={{ width: '100%', fontSize: '15px', fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
+              ) : collectMode === 'cash' ? (
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>💵 Cash Amount Received (₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={collectCashInput}
+                    onChange={(e) => setCollectCashInput(e.target.value)}
+                    placeholder="Enter cash collected"
+                    style={{ width: '100%', fontSize: '16px', fontWeight: 700 }}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '4px' }}>📱 UPI Amount Received (₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={collectUpiInput}
+                    onChange={(e) => setCollectUpiInput(e.target.value)}
+                    placeholder="Enter UPI transferred"
+                    style={{ width: '100%', fontSize: '16px', fontWeight: 700 }}
+                  />
+                </div>
+              )}
+
+              <div style={{ background: '#FAFDFB', padding: '8px 10px', borderRadius: '4px', fontSize: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Total Collecting Now:</span>
+                <strong style={{ color: '#047857' }}>
+                  ₹{((parseFloat(collectCashInput) || 0) + (parseFloat(collectUpiInput) || 0)).toLocaleString()}
+                </strong>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn-secondary" onClick={() => setCollectModalOrder(null)} style={{ flex: 1 }}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={submitCollectPayment} style={{ flex: 2, background: '#059669', justifyContent: 'center' }}>
+                <CreditCard size={15} /> Confirm Payment
               </button>
             </div>
           </div>

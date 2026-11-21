@@ -31,9 +31,10 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
 
-  // Payment Tracking State
-  const [amountPaidInput, setAmountPaidInput] = useState<string>('0');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'credit' | 'cheque'>('cash');
+  // Payment Tracking State with Dual Method (Cash + UPI Split) Support
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'split'>('cash');
+  const [cashInput, setCashInput] = useState<string>('');
+  const [upiInput, setUpiInput] = useState<string>('');
 
   // Next Visit Scheduling State (defaults to shop preferred visit if set, or blank)
   const [nextVisitDate, setNextVisitDate] = useState<string>(shop.preferredVisitDate || '');
@@ -63,12 +64,55 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
   const gstAmount = (taxableAmount * db.settings.defaultTaxRate) / 100;
   const grandTotal = taxableAmount + gstAmount;
 
-  const parsedPaid = parseFloat(amountPaidInput) || 0;
-  const amountPaid = Math.min(grandTotal, Math.max(0, parsedPaid));
+  const parsedCash = parseFloat(cashInput) || 0;
+  const parsedUpi = parseFloat(upiInput) || 0;
+
+  let cashAmount = 0;
+  let upiAmount = 0;
+
+  if (paymentMode === 'cash') {
+    cashAmount = Math.max(0, parsedCash);
+    upiAmount = 0;
+  } else if (paymentMode === 'upi') {
+    cashAmount = 0;
+    upiAmount = Math.max(0, parsedUpi);
+  } else {
+    // split mode: both cash and upi allowed simultaneously
+    cashAmount = Math.max(0, parsedCash);
+    upiAmount = Math.max(0, parsedUpi);
+  }
+
+  const amountPaid = Math.min(grandTotal, Math.max(0, cashAmount + upiAmount));
   const balanceDue = Math.max(0, grandTotal - amountPaid);
 
-  const setPresetPaid = (val: number) => {
-    setAmountPaidInput(val.toString());
+  const setPresetFull = () => {
+    if (paymentMode === 'cash') {
+      setCashInput(grandTotal.toString());
+      setUpiInput('');
+    } else if (paymentMode === 'upi') {
+      setUpiInput(grandTotal.toString());
+      setCashInput('');
+    } else {
+      // Split 50-50 default
+      const half = Math.round(grandTotal / 2);
+      setCashInput(half.toString());
+      setUpiInput((grandTotal - half).toString());
+    }
+  };
+
+  const setPresetHalf = () => {
+    const half = Math.round(grandTotal / 2);
+    if (paymentMode === 'cash') {
+      setCashInput(half.toString());
+      setUpiInput('');
+    } else if (paymentMode === 'upi') {
+      setUpiInput(half.toString());
+      setCashInput('');
+    } else {
+      const q = Math.round(half / 2);
+      setCashInput(q.toString());
+      setUpiInput((half - q).toString());
+    }
   };
 
   const overstockItem = items.find((i) => i.product.stock !== undefined && i.qty > i.product.stock);
@@ -79,13 +123,30 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
       return;
     }
 
+    // Compulsory payment check: at least some amount must be paid to confirm order!
+    if (amountPaid <= 0) {
+      alert(
+        '⚠️ Compulsory Payment Required: Please enter the payment amount received from the shopkeeper (Cash, UPI, or Split Cash+UPI). An initial payment must be recorded before confirming the order (partial payment is accepted).'
+      );
+      return;
+    }
+
+    const finalPaymentMethod =
+      paymentMode === 'split' || (cashAmount > 0 && upiAmount > 0)
+        ? 'split'
+        : upiAmount > 0
+        ? 'upi'
+        : 'cash';
+
     const newOrder = StorageService.finalizeOrder({
       shopId: shop.id,
       routeId: shop.routeId,
       items: items.map((i) => ({ product: i.product, qty: i.qty })),
       notes,
       amountPaid,
-      paymentMethod,
+      cashAmount,
+      upiAmount,
+      paymentMethod: finalPaymentMethod,
       nextVisitDate: nextVisitDate || undefined,
       nextVisitTime: nextVisitTime || undefined
     });
@@ -267,7 +328,7 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
           </div>
         </div>
 
-        {/* PAYMENT TRACKING SECTION */}
+        {/* PAYMENT TRACKING SECTION (WITH DUAL PAYMENT: CASH + UPI TOGETHER) */}
         <div
           style={{
             background: '#FFF',
@@ -278,120 +339,243 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
             boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <Wallet size={18} color="var(--primary)" />
-            <h4 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Payment Collection at Order Taking
-            </h4>
-          </div>
-
-          <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-            Amount Paid Right Now (₹) *
-          </label>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, fontSize: '18px', color: 'var(--primary)' }}>
-              ₹
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Wallet size={18} color="var(--primary)" />
+              <h4 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                Compulsory Payment Collection *
+              </h4>
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: amountPaid > 0 ? '#047857' : '#DC2626', background: amountPaid > 0 ? '#ECFDF5' : '#FEF2F2', padding: '2px 8px', borderRadius: '4px' }}>
+              {amountPaid > 0 ? (amountPaid >= grandTotal ? '✓ Full Paid' : '✓ Partial Paid') : '⚠️ Payment Required'}
             </span>
-            <input
-              type="number"
-              min={0}
-              max={grandTotal}
-              value={amountPaidInput}
-              onChange={(e) => setAmountPaidInput(e.target.value)}
-              placeholder="0"
-              style={{
-                width: '100%',
-                paddingLeft: '32px',
-                fontSize: '18px',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                borderColor: 'var(--primary)'
-              }}
-            />
           </div>
 
-          {/* Quick Amount Preset Chips */}
+          {/* Payment Method Selector: Cash / UPI / Split (Both simultaneously) */}
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+              Select Payment Mode
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('cash')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '6px',
+                  border: paymentMode === 'cash' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  background: paymentMode === 'cash' ? 'var(--primary-light)' : '#FFF',
+                  color: paymentMode === 'cash' ? 'var(--primary)' : 'var(--text-primary)',
+                  fontWeight: paymentMode === 'cash' ? 700 : 500,
+                  fontSize: '12.5px',
+                  cursor: 'pointer'
+                }}
+              >
+                💵 Cash Only
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMode('upi')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '6px',
+                  border: paymentMode === 'upi' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  background: paymentMode === 'upi' ? 'var(--primary-light)' : '#FFF',
+                  color: paymentMode === 'upi' ? 'var(--primary)' : 'var(--text-primary)',
+                  fontWeight: paymentMode === 'upi' ? 700 : 500,
+                  fontSize: '12.5px',
+                  cursor: 'pointer'
+                }}
+              >
+                📱 UPI / Online
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMode('split')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '6px',
+                  border: paymentMode === 'split' ? '2px solid #059669' : '1px solid var(--border)',
+                  background: paymentMode === 'split' ? '#ECFDF5' : '#FFF',
+                  color: paymentMode === 'split' ? '#047857' : 'var(--text-primary)',
+                  fontWeight: paymentMode === 'split' ? 700 : 600,
+                  fontSize: '12.5px',
+                  cursor: 'pointer'
+                }}
+              >
+                ⚡ Cash + UPI Split
+              </button>
+            </div>
+          </div>
+
+          {/* DUAL PAYMENT / SPLIT INPUT FIELDS */}
+          {paymentMode === 'split' ? (
+            <div style={{ background: '#FAFDFB', border: '1.5px dashed #A7F3D0', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#047857', marginBottom: '8px' }}>
+                Split Payment Entry (e.g. ₹3,000 Cash + ₹2,000 UPI):
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    💵 Cash Portion (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={grandTotal}
+                    value={cashInput}
+                    onChange={(e) => setCashInput(e.target.value)}
+                    placeholder="0"
+                    style={{
+                      width: '100%',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      padding: '8px 10px'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    📱 UPI Portion (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={grandTotal}
+                    value={upiInput}
+                    onChange={(e) => setUpiInput(e.target.value)}
+                    placeholder="0"
+                    style={{
+                      width: '100%',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      padding: '8px 10px'
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: '11px', color: '#047857', marginTop: '6px', fontWeight: 600 }}>
+                Combined Paid: ₹{amountPaid.toLocaleString()} (Cash: ₹{cashAmount.toLocaleString()} + UPI: ₹{upiAmount.toLocaleString()})
+              </div>
+            </div>
+          ) : paymentMode === 'cash' ? (
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                💵 Cash Amount Received (₹) *
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, fontSize: '18px', color: 'var(--primary)' }}>
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={grandTotal}
+                  value={cashInput}
+                  onChange={(e) => setCashInput(e.target.value)}
+                  placeholder="Enter cash collected"
+                  style={{
+                    width: '100%',
+                    paddingLeft: '32px',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    borderColor: 'var(--primary)'
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                📱 UPI Amount Transferred (₹) *
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, fontSize: '18px', color: 'var(--primary)' }}>
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={grandTotal}
+                  value={upiInput}
+                  onChange={(e) => setUpiInput(e.target.value)}
+                  placeholder="Enter UPI amount paid"
+                  style={{
+                    width: '100%',
+                    paddingLeft: '32px',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    borderColor: 'var(--primary)'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Quick Amount Preset Chips (No ₹0 credit button because initial payment is compulsory!) */}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
             <button
               type="button"
-              onClick={() => setPresetPaid(grandTotal)}
+              onClick={setPresetFull}
               style={{
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-sm)',
                 border: '1px solid #10B981',
-                background: amountPaid === grandTotal ? '#10B981' : '#ECFDF5',
-                color: amountPaid === grandTotal ? '#FFF' : '#047857',
+                background: amountPaid === grandTotal && grandTotal > 0 ? '#10B981' : '#ECFDF5',
+                color: amountPaid === grandTotal && grandTotal > 0 ? '#FFF' : '#047857',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
-              Full Paid (₹{grandTotal.toLocaleString()})
+              Full Bill Paid (₹{grandTotal.toLocaleString()})
             </button>
 
             <button
               type="button"
-              onClick={() => setPresetPaid(Math.round(grandTotal / 2))}
+              onClick={setPresetHalf}
               style={{
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-sm)',
                 border: '1px solid #F59E0B',
-                background: amountPaid === Math.round(grandTotal / 2) ? '#F59E0B' : '#FFFBEB',
-                color: amountPaid === Math.round(grandTotal / 2) ? '#FFF' : '#B45309',
+                background: amountPaid === Math.round(grandTotal / 2) && grandTotal > 0 ? '#F59E0B' : '#FFFBEB',
+                color: amountPaid === Math.round(grandTotal / 2) && grandTotal > 0 ? '#FFF' : '#B45309',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
             >
-              Half (₹{Math.round(grandTotal / 2).toLocaleString()})
+              Half Paid (₹{Math.round(grandTotal / 2).toLocaleString()})
             </button>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setPresetPaid(0)}
+          {/* Compulsory Warning if 0 */}
+          {amountPaid <= 0 && (
+            <div
               style={{
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)',
-                background: amountPaid === 0 ? 'var(--text-secondary)' : '#F3F4F6',
-                color: amountPaid === 0 ? '#FFF' : 'var(--text-secondary)',
+                background: '#FEF2F2',
+                border: '1px solid #FCA5A5',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                marginBottom: '12px',
                 fontSize: '12px',
+                color: '#991B1B',
                 fontWeight: 600,
-                cursor: 'pointer'
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              Unpaid / Credit (₹0)
-            </button>
-          </div>
-
-          {/* Payment Method Selector */}
-          <div style={{ marginBottom: '14px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-              Payment Mode
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
-              {(['cash', 'upi', 'credit', 'cheque'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setPaymentMethod(m)}
-                  style={{
-                    padding: '8px 4px',
-                    borderRadius: '6px',
-                    border: paymentMethod === m ? '2px solid var(--primary)' : '1px solid var(--border)',
-                    background: paymentMethod === m ? 'var(--primary-light)' : '#FFF',
-                    color: paymentMethod === m ? 'var(--primary)' : 'var(--text-primary)',
-                    fontWeight: paymentMethod === m ? 700 : 500,
-                    fontSize: '12px',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {m}
-                </button>
-              ))}
+              <span>⚠️ Compulsory Payment: An initial payment (Cash, UPI, or Split) is required to place this order.</span>
             </div>
-          </div>
+          )}
 
           {/* Dynamic Real-Time Receipt Summary */}
           <div
@@ -412,7 +596,10 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Amount Paid Now:</span>
-              <strong style={{ color: '#047857' }}>₹{amountPaid.toLocaleString()}</strong>
+              <strong style={{ color: '#047857' }}>
+                ₹{amountPaid.toLocaleString()}
+                {paymentMode === 'split' && ` (Cash: ₹${cashAmount} + UPI: ₹${upiAmount})`}
+              </strong>
             </div>
 
             <div
@@ -517,7 +704,7 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
           </div>
         )}
 
-        {/* Submit Save Order CTA */}
+        {/* Submit Save Order CTA with Compulsory Payment Status */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
           <button
             className="btn-primary"
@@ -527,12 +714,15 @@ export const MobileBillPreview: React.FC<MobileBillPreviewProps> = ({
               padding: '14px',
               fontSize: '15px',
               justifyContent: 'center',
-              opacity: overstockItem ? 0.5 : 1,
+              opacity: overstockItem ? 0.5 : (amountPaid <= 0 ? 0.85 : 1),
+              background: amountPaid <= 0 ? '#9CA3AF' : 'var(--primary)',
               cursor: overstockItem ? 'not-allowed' : 'pointer'
             }}
             onClick={handleSaveOrder}
           >
-            Confirm & Save Order (₹{grandTotal.toLocaleString()})
+            {amountPaid <= 0
+              ? `⚠️ Enter Initial Payment to Confirm Bill (₹${grandTotal.toLocaleString()})`
+              : `Confirm & Place Order (Paid: ₹${amountPaid.toLocaleString()} • Due: ₹${balanceDue.toLocaleString()})`}
           </button>
         </div>
       </div>

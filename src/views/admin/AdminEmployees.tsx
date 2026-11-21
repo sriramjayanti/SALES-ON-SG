@@ -14,7 +14,8 @@ import {
   EyeOff,
   Sparkles,
   Tag,
-  Check
+  Check,
+  Store
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
 import { Employee, UserRole, UserPermissions } from '../../types';
@@ -45,6 +46,9 @@ export const AdminEmployees: React.FC = () => {
   const [role, setRole] = useState<UserRole>('sales_employee');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
   const [assignedRouteIds, setAssignedRouteIds] = useState<string[]>([]);
+  const [assignedShopIds, setAssignedShopIds] = useState<string[]>([]);
+  const [shopRouteFilter, setShopRouteFilter] = useState<string>('all');
+  const [shopSearch, setShopSearch] = useState<string>('');
   const [assignedCategoryIds, setAssignedCategoryIds] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<UserPermissions>({
     canAddShop: true,
@@ -82,6 +86,9 @@ export const AdminEmployees: React.FC = () => {
     setRole('sales_employee');
     setStatus('active');
     setAssignedRouteIds(db.routes[0]?.id ? [db.routes[0].id] : []);
+    setAssignedShopIds([]);
+    setShopRouteFilter('all');
+    setShopSearch('');
     setAssignedCategoryIds([]);
     setPermissions({
       canAddShop: true,
@@ -114,6 +121,9 @@ export const AdminEmployees: React.FC = () => {
     setRole(emp.role);
     setStatus(emp.status);
     setAssignedRouteIds(emp.assignedRouteIds || []);
+    setAssignedShopIds(emp.assignedShopIds || []);
+    setShopRouteFilter('all');
+    setShopSearch('');
     setAssignedCategoryIds(emp.assignedCategoryIds || []);
     setPermissions(emp.permissions);
     setIsModalOpen(true);
@@ -163,6 +173,7 @@ export const AdminEmployees: React.FC = () => {
         role,
         status,
         assignedRouteIds,
+        assignedShopIds,
         assignedCategoryIds,
         permissions
       });
@@ -176,6 +187,7 @@ export const AdminEmployees: React.FC = () => {
         role,
         status,
         assignedRouteIds,
+        assignedShopIds,
         assignedCategoryIds,
         permissions
       });
@@ -326,7 +338,29 @@ export const AdminEmployees: React.FC = () => {
                   )}
                 </td>
 
-                <td style={{ fontSize: '12.5px' }}>{routeNames || 'None'}</td>
+                <td>
+                  <div style={{ fontSize: '12.5px', fontWeight: 600 }}>{routeNames || 'None'}</div>
+                  {emp.assignedShopIds && emp.assignedShopIds.length > 0 && (
+                    <div style={{ marginTop: '3px' }}>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          background: '#ECFDF5',
+                          color: '#047857',
+                          border: '1px solid #A7F3D0',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Store size={10} /> {emp.assignedShopIds.length} Custom Shop{emp.assignedShopIds.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
+                </td>
 
                 <td>
                   <span className={`status-chip ${isEmpDeleted ? 'inactive' : 'active'}`}>
@@ -652,6 +686,123 @@ export const AdminEmployees: React.FC = () => {
                         onChange={() => toggleCategoryAssignment(cat.id)}
                       />
                       <span>{cat.name} ({cat.code})</span>
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* ASSIGNED SHOPS ACROSS DIFFERENT ROUTES (CROSS-ROUTE ALLOCATION) */}
+          <div style={{ background: '#FAFDFB', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Store size={15} color="var(--primary)" />
+                <label style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Assign Specific Shops (Different Routes Allowed)
+                </label>
+              </div>
+              <span style={{ fontSize: '11px', fontWeight: 700, background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px' }}>
+                {assignedShopIds.length} Shops Selected
+              </span>
+            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+              Admin can assign specific shops from across multiple routes to this staff member. The staff will only deal with their assigned shops and categories.
+            </div>
+
+            {/* Filter and search bar for shops */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                placeholder="Search shops by name, code or owner..."
+                value={shopSearch}
+                onChange={(e) => setShopSearch(e.target.value)}
+                style={{ flex: 1, minWidth: '180px', height: '34px', fontSize: '12px' }}
+              />
+              <select
+                value={shopRouteFilter}
+                onChange={(e) => setShopRouteFilter(e.target.value)}
+                style={{ height: '34px', fontSize: '12px' }}
+              >
+                <option value="all">All Routes</option>
+                {db.routes.filter(r => !r.isDeleted && r.active !== false).map(r => (
+                  <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quick Actions: Select All in Route & Clear */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const matchingShopIds = db.shops
+                    .filter(s => !s.isDeleted && s.status !== 'inactive' && s.active !== false)
+                    .filter(s => shopRouteFilter === 'all' || s.routeId === shopRouteFilter)
+                    .map(s => s.id);
+                  setAssignedShopIds(prev => Array.from(new Set([...prev, ...matchingShopIds])));
+                  const routesToAdd = Array.from(new Set(db.shops.filter(s => matchingShopIds.includes(s.id)).map(s => s.routeId)));
+                  setAssignedRouteIds(prev => Array.from(new Set([...prev, ...routesToAdd])));
+                }}
+                style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                + Select All Filtered ({shopRouteFilter === 'all' ? 'All' : db.routes.find(r => r.id === shopRouteFilter)?.name || 'Route'})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssignedShopIds([])}
+                style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Clear Selected Shops
+              </button>
+            </div>
+
+            {/* Shop Checkbox Grid */}
+            <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '6px', background: '#FFF' }}>
+              {db.shops
+                .filter(s => !s.isDeleted && s.status !== 'inactive' && s.active !== false)
+                .filter(s => shopRouteFilter === 'all' || s.routeId === shopRouteFilter)
+                .filter(s => !shopSearch.trim() || s.name.toLowerCase().includes(shopSearch.toLowerCase()) || s.shopCode.toLowerCase().includes(shopSearch.toLowerCase()) || s.ownerName.toLowerCase().includes(shopSearch.toLowerCase()))
+                .map(shop => {
+                  const isChecked = assignedShopIds.includes(shop.id);
+                  const routeName = db.routes.find(r => r.id === shop.routeId)?.name || 'Route';
+                  return (
+                    <label
+                      key={shop.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: isChecked ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                        background: isChecked ? 'var(--primary-light)' : '#FFF',
+                        cursor: 'pointer',
+                        fontSize: '11.5px'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setAssignedShopIds(prev => prev.filter(id => id !== shop.id));
+                          } else {
+                            setAssignedShopIds(prev => [...prev, shop.id]);
+                            if (!assignedRouteIds.includes(shop.routeId)) {
+                              setAssignedRouteIds(prev => [...prev, shop.routeId]);
+                            }
+                          }
+                        }}
+                        style={{ marginTop: '2px' }}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {shop.name}
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                          {shop.shopCode} • <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{routeName}</span>
+                        </div>
+                      </div>
                     </label>
                   );
                 })}

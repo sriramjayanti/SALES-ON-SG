@@ -52,13 +52,16 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
 
   // Route Selection: Staff only sees assigned routes; Admin sees all active routes
   const isStaff = currentUser.role !== 'super_admin' && currentUser.role !== 'admin';
+  const hasAssignedShops = isStaff && Array.isArray(currentUser.assignedShopIds) && currentUser.assignedShopIds.length > 0;
+
   const availableRoutes = db.routes.filter((r) => {
     if (r.isDeleted || r.active === false) return false;
     if (!isStaff) return true;
     return (
       (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(r.id)) ||
       (Array.isArray(r.assignedEmployeeIds) && r.assignedEmployeeIds.includes(currentUser.id)) ||
-      r.assignedEmployeeId === currentUser.id
+      r.assignedEmployeeId === currentUser.id ||
+      (hasAssignedShops && currentUser.assignedShopIds!.some((sid) => db.shops.find((s) => s.id === sid)?.routeId === r.id))
     );
   });
 
@@ -91,13 +94,39 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
   // Workload filter for multi-agent routes
   const [workloadFilter, setWorkloadFilter] = useState<'my' | 'all'>('my');
 
+  // Check if whole route is assigned or only specific shops
+  const isWholeRouteAssigned = (Array.isArray(currentUser.assignedRouteIds) && currentUser.assignedRouteIds.includes(currentRoute?.id || '')) ||
+    currentRoute?.assignedEmployeeId === currentUser.id ||
+    (Array.isArray(currentRoute?.assignedEmployeeIds) && currentRoute.assignedEmployeeIds.includes(currentUser.id));
+
   // Ordered shops in route
   const orderedShopIds = currentRoute?.orderedShopIds || [];
-  const allOrderedShops: Shop[] = orderedShopIds
+  let allOrderedShops: Shop[] = orderedShopIds
     .map((id) => db.shops.find((s) => s.id === id && !s.isDeleted && s.status !== 'inactive' && s.active !== false))
     .filter(Boolean) as Shop[];
 
-  const myOrderedShops = allOrderedShops.filter((s) => s.assignedEmployeeId === currentUser.id);
+  // If user has specific shops assigned across routes and not the whole route, restrict to assigned shops
+  if (hasAssignedShops && !isWholeRouteAssigned) {
+    allOrderedShops = allOrderedShops.filter((s) => currentUser.assignedShopIds!.includes(s.id));
+  }
+
+  // Also include any assigned shops in this route that weren't in orderedShopIds
+  if (hasAssignedShops && currentRoute) {
+    const extraAssigned = db.shops.filter(
+      (s) =>
+        currentUser.assignedShopIds!.includes(s.id) &&
+        s.routeId === currentRoute.id &&
+        !s.isDeleted &&
+        s.status !== 'inactive' &&
+        s.active !== false &&
+        !allOrderedShops.some((existing) => existing.id === s.id)
+    );
+    if (extraAssigned.length > 0) {
+      allOrderedShops = [...allOrderedShops, ...extraAssigned];
+    }
+  }
+
+  const myOrderedShops = allOrderedShops.filter((s) => s.assignedEmployeeId === currentUser.id || currentUser.assignedShopIds?.includes(s.id));
   const hasMultiAgent = allOrderedShops.some((s) => s.assignedEmployeeId);
 
   const orderedShops = hasMultiAgent && myOrderedShops.length > 0 && workloadFilter === 'my'
@@ -137,6 +166,17 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     0
   );
 
+  // Collections Today on this Route (Cash + UPI Breakdown)
+  const todayRouteOrders = db.orders.filter(
+    (o) => (o.routeId === currentRoute?.id || routeShopIds.includes(o.shopId)) &&
+           o.status === 'completed' &&
+           o.dateString === selectedDate &&
+           !o.isDeleted
+  );
+  const todayRoutePaid = todayRouteOrders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+  const todayRouteCash = todayRouteOrders.reduce((sum, o) => sum + (o.cashAmount || (o.paymentMethod === 'cash' ? o.amountPaid : 0) || 0), 0);
+  const todayRouteUpi = todayRouteOrders.reduce((sum, o) => sum + (o.upiAmount || (o.paymentMethod === 'upi' ? o.amountPaid : 0) || 0), 0);
+
   // New Route Creation State
   const [isCreateRouteOpen, setIsCreateRouteOpen] = useState(false);
   const [newRouteName, setNewRouteName] = useState('');
@@ -173,35 +213,77 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
     alert(`New Route "${created.name}" created and assigned!`);
   };
 
-  const handleCollectShopPayment = (shop: Shop, totalDue: number) => {
-    const input = window.prompt(
-      `Collect payment for "${shop.name}"\nTotal Balance Pending: ₹${totalDue}\n\nEnter amount paid by shop:`,
-      totalDue.toString()
-    );
-    if (input === null) return;
-    const amt = parseFloat(input);
-    if (isNaN(amt) || amt <= 0) {
-      alert('Please enter a valid payment amount.');
+  // Dual Payment Collection Modal State
+  const [collectModalShop, setCollectModalShop] = useState<{ shop: Shop; due: number } | null>(null);
+  const [collectMode, setCollectMode] = useState<'cash' | 'upi' | 'split'>('cash');
+  const [collectCashInput, setCollectCashInput] = useState<string>('');
+  const [collectUpiInput, setCollectUpiInput] = useState<string>('');
+
+  const openCollectModal = (shop: Shop, due: number) => {
+    setCollectModalShop({ shop, due });
+    setCollectMode('cash');
+    setCollectCashInput(due.toString());
+    setCollectUpiInput('');
+  };
+
+  const handleConfirmCollectModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectModalShop) return;
+    const { shop, due } = collectModalShop;
+
+    let cAmt = 0;
+    let uAmt = 0;
+    if (collectMode === 'cash') {
+      cAmt = parseFloat(collectCashInput) || 0;
+    } else if (collectMode === 'upi') {
+      uAmt = parseFloat(collectUpiInput) || 0;
+    } else {
+      cAmt = parseFloat(collectCashInput) || 0;
+      uAmt = parseFloat(collectUpiInput) || 0;
+    }
+
+    const totalCollected = cAmt + uAmt;
+    if (totalCollected <= 0) {
+      alert('⚠️ Compulsory Payment Required: Please enter at least some amount to collect (Cash, UPI, or Split). Partial payment is allowed.');
       return;
     }
-    let remaining = Math.min(amt, totalDue);
+
+    let remaining = Math.min(totalCollected, due);
     const unpaidOrders = db.orders
       .filter((o) => o.shopId === shop.id && o.status === 'completed' && o.paymentStatus !== 'paid' && !o.isDeleted)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    let remainingCash = cAmt;
+    let remainingUpi = uAmt;
 
     for (const ord of unpaidOrders) {
       if (remaining <= 0) break;
       const ordDue = ord.grandTotal - (ord.amountPaid || 0);
       const payPortion = Math.min(remaining, ordDue);
       const isOrdPaid = payPortion >= ordDue;
-      StorageService.recordPayment(ord.id, isOrdPaid ? 'paid' : 'partial', payPortion, 'cash');
+
+      const portionCash = Math.min(remainingCash, payPortion);
+      remainingCash -= portionCash;
+      const portionUpi = Math.min(remainingUpi, payPortion - portionCash);
+      remainingUpi -= portionUpi;
+
+      const finalMethod = portionCash > 0 && portionUpi > 0 ? 'split' : portionUpi > 0 ? 'upi' : 'cash';
+
+      StorageService.recordPayment(ord.id, isOrdPaid ? 'paid' : 'partial', payPortion, finalMethod, {
+        cashAmount: portionCash,
+        upiAmount: portionUpi,
+        note: `Route payment collection: Cash ₹${portionCash} + UPI ₹${portionUpi}`
+      });
+
       remaining -= payPortion;
     }
-    const newDue = Math.max(0, totalDue - amt);
+
+    const newDue = Math.max(0, due - totalCollected);
+    setCollectModalShop(null);
     if (newDue > 0) {
-      alert(`₹${amt} collected for ${shop.name}!\nRemaining Balance Pending: ₹${newDue} (will show pending until paid).`);
+      alert(`₹${totalCollected.toLocaleString()} collected for ${shop.name} (Cash: ₹${cAmt}, UPI: ₹${uAmt})!\nRemaining Balance Due: ₹${newDue.toLocaleString()} (will show pending until paid).`);
     } else {
-      alert(`Full payment of ₹${amt} collected for ${shop.name}! All pending dues cleared.`);
+      alert(`Full payment of ₹${totalCollected.toLocaleString()} collected for ${shop.name}! All pending dues cleared.`);
     }
   };
 
@@ -341,46 +423,109 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
               ))}
             </div>
 
-            {/* Completed & Remaining Counts Banner */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-              <span style={{ background: 'var(--success-light)', color: 'var(--success-dark)', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 600 }}>
-                ✓ {completedCount} Completed
-              </span>
-              <span style={{ background: 'var(--warning-light)', color: '#B45309', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 600 }}>
-                ⏱ {Math.max(0, orderedShops.length - completedCount)} Remaining
-              </span>
-            </div>
-
-            {/* Pending Payments on that Day / Route Banner */}
-            <div
-              style={{
-                marginTop: '12px',
-                padding: '10px 14px',
-                background: totalPendingRouteDues > 0 ? '#FEF2F2' : '#F0FDF4',
-                border: totalPendingRouteDues > 0 ? '1px solid #FECACA' : '1px solid #BBF7D0',
-                borderRadius: 'var(--radius-md)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CreditCard size={18} color={totalPendingRouteDues > 0 ? '#DC2626' : '#16A34A'} />
+            {/* 4 Route KPI Cards: Remaining Shops, Completed Shops, Amount Paid (Cash+UPI), Balance Due */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginTop: '12px' }}>
+              {/* Card 1: Remaining Shops */}
+              <div
+                style={{
+                  background: '#FFFBEB',
+                  border: '1.5px solid #FCD34D',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: totalPendingRouteDues > 0 ? '#991B1B' : '#166534' }}>
-                    Pending Payments on Route
+                  <div style={{ fontSize: '10px', color: '#92400E', fontWeight: 700, textTransform: 'uppercase' }}>Remaining</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 800, color: '#D97706', marginTop: '1px' }}>
+                    {Math.max(0, orderedShops.length - completedCount)} <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>shops</span>
                   </div>
-                  <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
-                    Today's Pending: ₹{todayPendingRouteDues.toLocaleString()} • Total Route Due: ₹{totalPendingRouteDues.toLocaleString()}
+                  <div style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
+                    Done: {completedCount} / {orderedShops.length}
                   </div>
+                </div>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#FEF3C7', color: '#B45309', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px' }}>
+                  ⏱
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '15px', fontWeight: 800, color: totalPendingRouteDues > 0 ? '#DC2626' : '#16A34A' }}>
-                  ₹{totalPendingRouteDues.toLocaleString()}
+
+              {/* Card 2: Completed Shops */}
+              <div
+                style={{
+                  background: '#ECFDF5',
+                  border: '1.5px solid #A7F3D0',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '10px', color: '#065F46', fontWeight: 700, textTransform: 'uppercase' }}>Completed</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: 800, color: 'var(--success)', marginTop: '1px' }}>
+                    {completedCount} <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>shops</span>
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
+                    {orderedShops.length > 0 ? Math.round((completedCount / orderedShops.length) * 100) : 0}% progress
+                  </div>
                 </div>
-                <div style={{ fontSize: '9.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Total Dues
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--success-light)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle2 size={18} />
+                </div>
+              </div>
+
+              {/* Card 3: Amount Paid Today */}
+              <div
+                style={{
+                  background: '#F0FDF4',
+                  border: '1.5px solid #86EFAC',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '10px', color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Amount Paid</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: '18px', fontWeight: 800, color: '#15803D', marginTop: '1px' }}>
+                    ₹{todayRoutePaid.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>
+                    💵 ₹{todayRouteCash.toLocaleString()} • 📱 ₹{todayRouteUpi.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#DCFCE7', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                  ₹
+                </div>
+              </div>
+
+              {/* Card 4: Balance Due */}
+              <div
+                style={{
+                  background: totalPendingRouteDues > 0 ? '#FEF2F2' : '#F0FDF4',
+                  border: totalPendingRouteDues > 0 ? '1.5px solid #FECACA' : '1.5px solid #BBF7D0',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '10px', color: totalPendingRouteDues > 0 ? '#991B1B' : '#166534', fontWeight: 700, textTransform: 'uppercase' }}>Balance Due</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: '18px', fontWeight: 800, color: totalPendingRouteDues > 0 ? '#DC2626' : 'var(--success)', marginTop: '1px' }}>
+                    ₹{totalPendingRouteDues.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>
+                    {todayPendingRouteDues > 0 ? `Today: ₹${todayPendingRouteDues.toLocaleString()}` : 'Cleared today'}
+                  </div>
+                </div>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: totalPendingRouteDues > 0 ? '#FEE2E2' : '#DCFCE7', color: totalPendingRouteDues > 0 ? '#DC2626' : '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CreditCard size={16} />
                 </div>
               </div>
             </div>
@@ -619,7 +764,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleCollectShopPayment(shop, shopPendingDue);
+                            openCollectModal(shop, shopPendingDue);
                           }}
                           style={{
                             fontSize: '10.5px',
@@ -634,7 +779,7 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
                             alignItems: 'center',
                             gap: '3px'
                           }}
-                          title="Collect Full or Partial Payment"
+                          title="Collect Full or Partial Payment (Cash / UPI / Split)"
                         >
                           Collect ₹
                         </button>
@@ -819,6 +964,204 @@ export const MobileRoute: React.FC<MobileRouteProps> = ({
           </div>
         </form>
       </Modal>
+
+      {/* Dual Payment Collection Modal */}
+      {collectModalShop && (
+        <Modal
+          isOpen={!!collectModalShop}
+          onClose={() => setCollectModalShop(null)}
+          title={`Collect Due: ${collectModalShop.shop.name}`}
+        >
+          <form onSubmit={handleConfirmCollectModal}>
+            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#991B1B', fontWeight: 700, textTransform: 'uppercase' }}>Total Balance Pending</div>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '24px', fontWeight: 800, color: '#DC2626', marginTop: '2px' }}>
+                ₹{collectModalShop.due.toLocaleString()}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Shop Owner: {collectModalShop.shop.ownerName} • {collectModalShop.shop.phone}
+              </div>
+            </div>
+
+            {/* Payment Method Selector */}
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-secondary)' }}>
+              Select Payment Mode:
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCollectMode('cash');
+                  setCollectCashInput(collectModalShop.due.toString());
+                  setCollectUpiInput('');
+                }}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  border: collectMode === 'cash' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  background: collectMode === 'cash' ? 'var(--primary-light)' : '#FFF',
+                  color: collectMode === 'cash' ? 'var(--primary)' : 'var(--text-secondary)'
+                }}
+              >
+                💵 Cash
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCollectMode('upi');
+                  setCollectUpiInput(collectModalShop.due.toString());
+                  setCollectCashInput('');
+                }}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  border: collectMode === 'upi' ? '2px solid #2563EB' : '1px solid var(--border)',
+                  background: collectMode === 'upi' ? '#EFF6FF' : '#FFF',
+                  color: collectMode === 'upi' ? '#2563EB' : 'var(--text-secondary)'
+                }}
+              >
+                📱 UPI
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCollectMode('split');
+                  const half = Math.round(collectModalShop.due / 2);
+                  setCollectCashInput(half.toString());
+                  setCollectUpiInput((collectModalShop.due - half).toString());
+                }}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  border: collectMode === 'split' ? '2px solid #D97706' : '1px solid var(--border)',
+                  background: collectMode === 'split' ? '#FFFBEB' : '#FFF',
+                  color: collectMode === 'split' ? '#B45309' : 'var(--text-secondary)'
+                }}
+              >
+                ⚡ Split
+              </button>
+            </div>
+
+            {/* Inputs based on mode */}
+            {collectMode === 'cash' && (
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+                  💵 Cash Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={collectCashInput}
+                  onChange={(e) => setCollectCashInput(e.target.value)}
+                  placeholder="Enter cash collected"
+                  style={{ width: '100%', height: '42px', fontSize: '15px', fontWeight: 700 }}
+                  required
+                />
+              </div>
+            )}
+
+            {collectMode === 'upi' && (
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '4px' }}>
+                  📱 UPI Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={collectUpiInput}
+                  onChange={(e) => setCollectUpiInput(e.target.value)}
+                  placeholder="Enter UPI collected"
+                  style={{ width: '100%', height: '42px', fontSize: '15px', fontWeight: 700 }}
+                  required
+                />
+              </div>
+            )}
+
+            {collectMode === 'split' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '4px' }}>
+                    💵 Cash (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={collectCashInput}
+                    onChange={(e) => setCollectCashInput(e.target.value)}
+                    placeholder="Cash part"
+                    style={{ width: '100%', height: '42px', fontSize: '15px', fontWeight: 700 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '4px' }}>
+                    📱 UPI (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={collectUpiInput}
+                    onChange={(e) => setCollectUpiInput(e.target.value)}
+                    placeholder="UPI part"
+                    style={{ width: '100%', height: '42px', fontSize: '15px', fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Total collected calculation and remaining balance hint */}
+            {(() => {
+              const c = parseFloat(collectCashInput) || 0;
+              const u = parseFloat(collectUpiInput) || 0;
+              const tot = c + u;
+              const rem = Math.max(0, collectModalShop.due - tot);
+              return (
+                <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Total Entering:</span>
+                    <strong style={{ color: '#047857' }}>₹{tot.toLocaleString()}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginTop: '4px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Remaining Balance Due:</span>
+                    <strong style={{ color: rem > 0 ? '#DC2626' : 'var(--success)' }}>
+                      ₹{rem.toLocaleString()} {rem > 0 ? '(Pending)' : '(Cleared)'}
+                    </strong>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setCollectModalShop(null)}
+                style={{ flex: 1, height: '42px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{ flex: 2, height: '42px', fontWeight: 700 }}
+              >
+                Confirm Payment Receipt
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };

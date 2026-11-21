@@ -787,6 +787,25 @@ export const StorageService = {
       isDeleted: false,
       joinedAt: new Date().toISOString().split('T')[0]
     };
+
+    // Auto-link assigned shops across different routes
+    if (Array.isArray(newEmp.assignedShopIds) && newEmp.assignedShopIds.length > 0) {
+      if (!newEmp.assignedRouteIds) newEmp.assignedRouteIds = [];
+      newEmp.assignedShopIds.forEach(shopId => {
+        const shop = db.shops.find(s => s.id === shopId);
+        if (shop) {
+          if (!shop.assignedEmployeeIds) shop.assignedEmployeeIds = [];
+          if (!shop.assignedEmployeeIds.includes(newEmp.id)) {
+            shop.assignedEmployeeIds.push(newEmp.id);
+          }
+          if (!newEmp.assignedRouteIds.includes(shop.routeId)) {
+            newEmp.assignedRouteIds.push(shop.routeId);
+          }
+          FirestoreSync.saveDocument('shops', shop.id, shop);
+        }
+      });
+    }
+
     db.employees.push(newEmp);
     this.saveDb(db);
     FirestoreSync.saveDocument('employees', newEmp.id, newEmp);
@@ -809,6 +828,25 @@ export const StorageService = {
           mergedUpdates.password = cleanPhone.slice(-5);
         }
       }
+
+      // Auto-link assigned shops across different routes
+      if (Array.isArray(mergedUpdates.assignedShopIds)) {
+        if (!mergedUpdates.assignedRouteIds) mergedUpdates.assignedRouteIds = [...(old.assignedRouteIds || [])];
+        mergedUpdates.assignedShopIds.forEach(shopId => {
+          const shop = db.shops.find(s => s.id === shopId);
+          if (shop) {
+            if (!shop.assignedEmployeeIds) shop.assignedEmployeeIds = [];
+            if (!shop.assignedEmployeeIds.includes(id)) {
+              shop.assignedEmployeeIds.push(id);
+            }
+            if (!mergedUpdates.assignedRouteIds!.includes(shop.routeId)) {
+              mergedUpdates.assignedRouteIds!.push(shop.routeId);
+            }
+            FirestoreSync.saveDocument('shops', shop.id, shop);
+          }
+        });
+      }
+
       db.employees[index] = { ...old, ...mergedUpdates };
       this.saveDb(db);
       FirestoreSync.saveDocument('employees', id, db.employees[index]);
@@ -898,7 +936,9 @@ export const StorageService = {
     items: { product: Product; qty: number }[];
     notes?: string;
     amountPaid?: number;
-    paymentMethod?: 'cash' | 'upi' | 'credit' | 'cheque';
+    paymentMethod?: 'cash' | 'upi' | 'credit' | 'cheque' | 'split';
+    cashAmount?: number;
+    upiAmount?: number;
     nextVisitDate?: string;
     nextVisitTime?: string;
   }): Order {
@@ -937,6 +977,16 @@ export const StorageService = {
     const balanceDue = Math.max(0, grandTotal - paidNow);
     const paymentStatus: Order['paymentStatus'] = paidNow >= grandTotal ? 'paid' : paidNow > 0 ? 'partial' : 'unpaid';
 
+    // Resolved payment method: if both cash and upi are provided, mark as 'split'
+    const finalMethod: Order['paymentMethod'] =
+      orderData.paymentMethod ||
+      ((orderData.cashAmount && orderData.upiAmount && orderData.cashAmount > 0 && orderData.upiAmount > 0)
+        ? 'split'
+        : (orderData.upiAmount && orderData.upiAmount > 0 ? 'upi' : 'cash'));
+
+    const finalCash = orderData.cashAmount !== undefined ? orderData.cashAmount : (finalMethod === 'cash' ? paidNow : 0);
+    const finalUpi = orderData.upiAmount !== undefined ? orderData.upiAmount : (finalMethod === 'upi' ? paidNow : 0);
+
     // Generate central sequential invoice number
     const invNum = db.settings.nextInvoiceNumber;
     const invoiceNo = `${db.settings.invoicePrefix}${String(invNum).padStart(6, '0')}`;
@@ -966,10 +1016,20 @@ export const StorageService = {
       status: 'completed',
       deliveryStatus: 'pending',
       paymentStatus,
-      paymentMethod: orderData.paymentMethod || 'cash',
+      paymentMethod: finalMethod,
+      cashAmount: finalCash,
+      upiAmount: finalUpi,
       amountPaid: paidNow,
       balanceDue,
       paidAt: paymentStatus === 'paid' ? new Date().toISOString() : undefined,
+      paymentHistory: paidNow > 0 ? [{
+        amount: paidNow,
+        method: finalMethod,
+        cashAmount: finalCash,
+        upiAmount: finalUpi,
+        timestamp: new Date().toISOString(),
+        note: 'Initial payment upon placing order'
+      }] : [],
       nextVisitDate: orderData.nextVisitDate,
       nextVisitTime: orderData.nextVisitTime,
       whatsappShared: false,
@@ -1066,7 +1126,8 @@ export const StorageService = {
     orderId: string,
     paymentStatus: 'paid' | 'partial',
     amount: number,
-    method: 'cash' | 'upi' | 'credit' | 'cheque' = 'cash'
+    method: 'cash' | 'upi' | 'credit' | 'cheque' | 'split' = 'cash',
+    splitDetails?: { cashAmount?: number; upiAmount?: number; note?: string }
   ) {
     const db = this.getDb();
     const user = this.getCurrentUser();
@@ -1077,6 +1138,26 @@ export const StorageService = {
       order.amountPaid = newPaid;
       order.balanceDue = Math.max(0, order.grandTotal - newPaid);
       order.paymentMethod = method;
+
+      if (splitDetails) {
+        order.cashAmount = (order.cashAmount || 0) + (splitDetails.cashAmount || 0);
+        order.upiAmount = (order.upiAmount || 0) + (splitDetails.upiAmount || 0);
+      } else if (method === 'cash') {
+        order.cashAmount = (order.cashAmount || 0) + amount;
+      } else if (method === 'upi') {
+        order.upiAmount = (order.upiAmount || 0) + amount;
+      }
+
+      if (!order.paymentHistory) order.paymentHistory = [];
+      order.paymentHistory.push({
+        amount,
+        method,
+        cashAmount: splitDetails?.cashAmount ?? (method === 'cash' ? amount : 0),
+        upiAmount: splitDetails?.upiAmount ?? (method === 'upi' ? amount : 0),
+        timestamp: new Date().toISOString(),
+        note: splitDetails?.note || 'Payment collection'
+      });
+
       if (newPaid >= order.grandTotal) {
         order.paymentStatus = 'paid';
         order.paidAt = new Date().toISOString();
@@ -1089,7 +1170,7 @@ export const StorageService = {
         'RECORD_PAYMENT',
         'orders',
         order.id,
-        `Collected payment of ₹${amount.toLocaleString()} (${method.toUpperCase()}) for order ${order.orderNo} from ${order.shopNameSnapshot}. Remaining due: ₹${order.balanceDue.toLocaleString()}`
+        `Collected payment of ₹${amount.toLocaleString()} (${method.toUpperCase()}${splitDetails ? ` - Cash: ₹${splitDetails.cashAmount || 0}, UPI: ₹${splitDetails.upiAmount || 0}` : ''}) for order ${order.orderNo} from ${order.shopNameSnapshot}. Remaining due: ₹${order.balanceDue.toLocaleString()}`
       );
     }
   },
